@@ -178,7 +178,7 @@ type sample1dRef struct {
 // Use the given weightlist to resize a set of samples onto another set of samples.
 func resample1d(src1d *sample1dRef, dst1d *sample1dRef, weightList []fpWeight) {
 	for i := range weightList {
-		// This is the line of coe that actually does the resampling. (But All the
+		// This is the line of code that actually does the resampling. (But All the
 		// interesting things were precalculated in createWeightList().)
 		dst1d.sam[weightList[i].dstSam*dst1d.stride] += src1d.sam[weightList[i].srcSam*
 			src1d.stride] * weightList[i].weight

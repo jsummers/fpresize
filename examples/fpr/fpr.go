@@ -77,6 +77,10 @@ func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	//	return fpresize.MakeLanczosFilter(3)
 	//})
 
+	// To blur the image, call SetBlur(). Not all filters are suitable for blurring.
+	// A Gaussian filter is a good choice.
+	// fp.SetBlur(3.0)
+
 	// Decide on the width of the resized image.
 	srcBounds = srcImg.Bounds()
 	srcW = srcBounds.Max.X - srcBounds.Min.X

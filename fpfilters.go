@@ -46,6 +46,25 @@ func MakeTriangleFilter() *Filter {
 	return f
 }
 
+func MakeGaussianFilter() *Filter {
+	f := new(Filter)
+	f.F = func(x float64, scaleFactor float64) float64 {
+		if x >= 2.0 {
+			return 0.0
+		}
+		v := math.Exp(-2.0*x*x) * 0.79788456080286535587989;
+		if x <= 1.999 {
+			return v
+		}
+		// Slightly alter the filter to make it continuous:
+		return 1000.0*(2.0-x)*v
+	}
+	f.Radius = func(scaleFactor float64) float64 {
+		return 2.0
+	}
+	return f
+}
+
 // Returns a cubic filter, based on the B and C parameters as defined by
 // Mitchell/Netravali. Some options are (1./3,1./3) for a Mitchell filter,
 // (0,1/2) for Catmull-Rom, and (0,0) for a Hermite filter.
