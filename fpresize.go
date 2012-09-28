@@ -25,17 +25,31 @@ type FPObject struct {
 
 	filterGetter FilterGetter
 	blurGetter   BlurGetter
-	inputCCFSet  bool
-	inputCCF     ColorConverter
-	outputCCFSet bool
-	outputCCF    ColorConverter
+
+	inputCCFSet    bool
+	inputCCF       ColorConverter
+	inputCCFFlags  uint32
+	outputCCFSet   bool
+	outputCCF      ColorConverter
+	outputCCFFlags uint32
 
 	progressCallback func(msg string)
 }
 
-// A ColorConverter is passed a slice of three samples (R, G, B),
-// and converts them to a different colorspace in-place.
+// A ColorConverter is passed a slice of samples. It converts them all to
+// a new colorspace, in-place.
+// If CCFFlagWholePixels is set, the first sample is Red, then Green, Blue,
+// Red, Green, Blue, etc.
 type ColorConverter func(x []float64)
+
+const (
+	// If set via Set*ColorConverterFlags(), results from color conversion will
+	// not be cached.
+	CCFFlagNoCache = 0x00000001
+	// If set via Set*ColorConverterFlags(), the R, G, and B channels may have
+	// different response curves.
+	CCFFlagWholePixels = 0x00000002
+)
 
 // A FilterGetter is a function that returns a Filter. The Filter
 // returned can depend on which dimension is being resized, and the
@@ -477,6 +491,16 @@ func (fp *FPObject) SetInputColorConverter(ccf ColorConverter) {
 func (fp *FPObject) SetOutputColorConverter(ccf ColorConverter) {
 	fp.outputCCF = ccf
 	fp.outputCCFSet = true
+}
+
+// Accepts a bitwise combination of CCFFlag* values.
+func (fp *FPObject) SetInputColorConverterFlags(flags uint32) {
+	fp.inputCCFFlags = flags
+}
+
+// Accepts a bitwise combination of CCFFlag* values.
+func (fp *FPObject) SetOutputColorConverterFlags(flags uint32) {
+	fp.outputCCFFlags = flags
 }
 
 // Set the size and origin of the resized image.
