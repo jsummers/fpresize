@@ -20,6 +20,8 @@ type FPObject struct {
 	srcW, srcH int
 	dstW, dstH int
 
+	hasTransparency bool
+
 	filterGetter FilterGetter
 	blurGetter   BlurGetter
 	inputCCFSet  bool
@@ -210,13 +212,15 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
 	weightList := fp.createWeightList(srcH, dstH, true)
 
 	// Iterate over the columns (of which src and dst have the same number)
-	// Columns of *samples*, that is, not pixels. No need to treat R,G,B,A specially.
+	// Columns of *samples*, that is, not pixels.
 	src1d.stride = src.Stride
 	dst1d.stride = dst.Stride
 	for col := 0; col < 4*w; col++ {
-		src1d.sam = src.Pix[col:]
-		dst1d.sam = dst.Pix[col:]
-		resample1d(&src1d, &dst1d, weightList)
+		if fp.hasTransparency || (col%4 != 3) { // If no transparency, skip over the alpha samples
+			src1d.sam = src.Pix[col:]
+			dst1d.sam = dst.Pix[col:]
+			resample1d(&src1d, &dst1d, weightList)
+		}
 	}
 }
 
@@ -248,9 +252,11 @@ func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage, dstW int) {
 	for row := 0; row < h; row++ {
 		// Iterate over R,G,B,A
 		for k := 0; k < 4; k++ {
-			src1d.sam = src.Pix[row*src.Stride+k:]
-			dst1d.sam = dst.Pix[row*dst.Stride+k:]
-			resample1d(&src1d, &dst1d, weightList)
+			if fp.hasTransparency || k != 3 {
+				src1d.sam = src.Pix[row*src.Stride+k:]
+				dst1d.sam = dst.Pix[row*dst.Stride+k:]
+				resample1d(&src1d, &dst1d, weightList)
+			}
 		}
 	}
 }
@@ -283,6 +289,9 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 			// TODO: Maybe we should be using fpModel.Convert here, in some way.
 			srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
 			r, g, b, a = srcclr.RGBA()
+			if a < 65535 {
+				fp.hasTransparency = true
+			}
 
 			// Choose from among several methods of converting the pixel to our
 			// desired format.
@@ -343,23 +352,29 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 
 	for j = 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
 		for i = 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
-			clr[3] = float64(im.Pix[j*im.Stride+i*4+3]) // alpha value
-			if clr[3] <= 0.0 {                          // Fully transparent
-				im.Pix[j*im.Stride+i*4+0] = 0.0
-				im.Pix[j*im.Stride+i*4+1] = 0.0
-				im.Pix[j*im.Stride+i*4+2] = 0.0
-				im.Pix[j*im.Stride+i*4+3] = 0.0
-				continue
+			if !fp.hasTransparency {
+				clr[3] = 1.0
+			} else {
+				clr[3] = float64(im.Pix[j*im.Stride+i*4+3]) // alpha value
+				if clr[3] <= 0.0 {                          // Fully transparent
+					im.Pix[j*im.Stride+i*4+0] = 0.0
+					im.Pix[j*im.Stride+i*4+1] = 0.0
+					im.Pix[j*im.Stride+i*4+2] = 0.0
+					im.Pix[j*im.Stride+i*4+3] = 0.0
+					continue
+				}
+				if clr[3] > 1.0 {
+					clr[3] = 1.0
+				}
 			}
 			clr[0] = float64(im.Pix[j*im.Stride+i*4+0])
 			clr[1] = float64(im.Pix[j*im.Stride+i*4+1])
 			clr[2] = float64(im.Pix[j*im.Stride+i*4+2])
 			// Clamp to [0,1], and convert to unassociated alpha
-			if clr[3] > 1.0 {
-				clr[3] = 1.0
-			}
 			for k = 0; k < 3; k++ {
-				clr[k] /= clr[3]
+				if fp.hasTransparency {
+					clr[k] /= clr[3]
+				}
 				if clr[k] < 0.0 {
 					clr[k] = 0.0
 				}
