@@ -8,11 +8,15 @@ package main
 import "fmt"
 import "os"
 import "strconv"
+import "time"
 import "image"
 import "image/png"
 import _ "image/jpeg"
 import _ "image/gif"
 import "github.com/jsummers/fpresize"
+
+var showProgress bool = false
+var showTimes bool = true
 
 func readImageFromFile(srcFilename string) (image.Image, error) {
 	var err error
@@ -45,6 +49,22 @@ func writeImageToFile(img image.Image, dstFilename string) error {
 	return err
 }
 
+var lastMsgTime time.Time
+
+func progressMsg(msg string) {
+	if !showProgress {
+		return
+	}
+	now := time.Now()
+	if showTimes {
+		if !lastMsgTime.IsZero() {
+			fmt.Printf("%v\n", now.Sub(lastMsgTime))
+		}
+	}
+	fmt.Printf("%s\n", msg)
+	lastMsgTime = now
+}
+
 func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	var err error
 	var srcBounds image.Rectangle
@@ -52,12 +72,15 @@ func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	var srcImg image.Image
 	var srcW, srcH, dstW int
 
+	progressMsg("Reading source file")
 	srcImg, err = readImageFromFile(srcFilename)
 	if err != nil {
 		return err
 	}
 
 	fp := new(fpresize.FPObject)
+
+	fp.SetProgressCallback(progressMsg)
 
 	// To do colorspace-unaware resizing, call the following functions:
 	// fp.SetInputColorConverter(nil)
@@ -111,12 +134,15 @@ func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	// - It's probably faster, because CopyToNRGBA knows about resizedImage's
 	//   internal format, while png.Encode has to use the public accessor
 	//   methods.
+	progressMsg("Converting to NRGBA format")
 	nrgbaResizedImage := resizedImage.CopyToNRGBA()
 
+	progressMsg("Writing target file")
 	err = writeImageToFile(nrgbaResizedImage, dstFilename)
 	if err != nil {
 		return err
 	}
+	progressMsg("Done")
 
 	return nil
 }

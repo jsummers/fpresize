@@ -7,6 +7,7 @@ package fpresize
 import "image"
 import "image/color"
 import "math"
+import "fmt"
 import "errors"
 
 // FPObject is an opaque struct that tracks the state of the resize operation.
@@ -28,6 +29,8 @@ type FPObject struct {
 	inputCCF     ColorConverter
 	outputCCFSet bool
 	outputCCF    ColorConverter
+
+	progressCallback func(msg string)
 }
 
 // A ColorConverter is passed a slice of three samples (R, G, B),
@@ -483,6 +486,18 @@ func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 	fp.dstH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
 }
 
+func (fp *FPObject) SetProgressCallback(fn func(msg string)) {
+	fp.progressCallback = fn
+}
+
+func (fp *FPObject) progressMsgf(format string, a ...interface{}) {
+	if fp.progressCallback == nil {
+		return
+	}
+	msg := fmt.Sprintf(format, a...)
+	fp.progressCallback(msg)
+}
+
 // Resize performs the resize, and returns a pointer to an image that uses the
 // custom FPImage type.
 func (fp *FPObject) Resize() (*FPImage, error) {
@@ -504,6 +519,7 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 
 	if fp.srcFPImage == nil {
 		fp.srcFPImage = new(FPImage)
+		fp.progressMsgf("Converting to FPImage format")
 		err = fp.copySrcToFPImage(fp.srcFPImage)
 		if err != nil {
 			return nil, err
@@ -511,12 +527,15 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 	}
 
 	intermedFPImage = new(FPImage)
+	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstH)
 	fp.resizeHeight(fp.srcFPImage, intermedFPImage, fp.dstH)
 
 	fp.dstFPImage = new(FPImage)
+	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstW)
 	fp.resizeWidth(intermedFPImage, fp.dstFPImage, fp.dstW)
 	fp.dstFPImage.Rect = fp.dstBounds
 
+	fp.progressMsgf("Converting to target colorspace")
 	fp.convertDstFPImage(fp.dstFPImage)
 
 	return fp.dstFPImage, nil
