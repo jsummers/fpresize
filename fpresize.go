@@ -214,6 +214,8 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
 	var srcH int
 	var w int // width of both images
 
+	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstH)
+
 	w = src.Rect.Max.X - src.Rect.Min.X
 	srcH = src.Rect.Max.Y - src.Rect.Min.Y
 
@@ -249,6 +251,8 @@ func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage, dstW int) {
 	var dst1d sample1dRef
 	var srcW int
 	var h int // height of both images
+
+	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstW)
 
 	srcW = src.Rect.Max.X - src.Rect.Min.X
 	h = src.Rect.Max.Y - src.Rect.Min.Y
@@ -550,13 +554,25 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 		}
 	}
 
-	intermedFPImage = new(FPImage)
-	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstH)
-	fp.resizeHeight(fp.srcFPImage, intermedFPImage, fp.dstH)
+	// When changing the width, the relevant samples are close together in memory.
+	// When changing the height, they are much farther apart. On a modern computer,
+	// due to caching, that makes changing the width much faster than the height.
+	// So it is beneficial to resize the height first if we are increasing the
+	// image size, and the width first if we are reducing it.
+	if fp.dstW > fp.srcW {
+		intermedFPImage = new(FPImage)
+		fp.resizeHeight(fp.srcFPImage, intermedFPImage, fp.dstH)
 
-	fp.dstFPImage = new(FPImage)
-	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstW)
-	fp.resizeWidth(intermedFPImage, fp.dstFPImage, fp.dstW)
+		fp.dstFPImage = new(FPImage)
+		fp.resizeWidth(intermedFPImage, fp.dstFPImage, fp.dstW)
+	} else {
+		intermedFPImage = new(FPImage)
+		fp.resizeWidth(fp.srcFPImage, intermedFPImage, fp.dstW)
+
+		fp.dstFPImage = new(FPImage)
+		fp.resizeHeight(intermedFPImage, fp.dstFPImage, fp.dstH)
+	}
+
 	fp.dstFPImage.Rect = fp.dstBounds
 
 	fp.progressMsgf("Converting to target colorspace")
