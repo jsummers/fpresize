@@ -91,14 +91,15 @@ func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	// An example of how to specify the filter to use:
 	// fp.SetFilter(fpresize.MakeLanczosFilter(3))
 
-	// The filter to use can depend on the scale factor, and can be different for
-	// the vertical and horizontal dimensions. For example:
-	// fp.SetFilterGetter(func(isVertical bool, scaleFactor float64) *fpresize.Filter {
-	//	if scaleFactor > 1.0 {
+	// The filter to use can be different for the vertical and horizontal
+	// dimensions. It can also depend on other available information, such
+	// as the scale factor.
+	// fp.SetFilterGetter(func(isVertical bool) *fpresize.Filter {
+	//	if fp.ScaleFactor(isVertical) > 1.0 {
 	//		return fpresize.MakeCubicFilter(1.0/3, 1.0/3)
 	//	}
 	//	return fpresize.MakeLanczosFilter(3)
-	//})
+	// })
 
 	// To blur the image, call SetBlur(). Not all filters are suitable for blurring.
 	// A Gaussian filter is a good choice.

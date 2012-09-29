@@ -52,12 +52,12 @@ const (
 )
 
 // A FilterGetter is a function that returns a Filter. The Filter
-// returned can depend on which dimension is being resized, and the
-// scale factor.
-type FilterGetter func(isVertical bool, scaleFactor float64) *Filter
+// returned can depend on which dimension is being resized, and
+// other things.
+type FilterGetter func(isVertical bool) *Filter
 
 // A BlurGetter is a function that returns a 'blur' setting.
-type BlurGetter func(isVertical bool, scaleFactor float64) float64
+type BlurGetter func(isVertical bool) float64
 
 type fpWeight struct {
 	srcSam int
@@ -96,11 +96,11 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 		reductionFactor = 1.0
 	}
 	if fp.blurGetter != nil {
-		reductionFactor *= fp.blurGetter(isVertical, scaleFactor)
+		reductionFactor *= fp.blurGetter(isVertical)
 	}
 
 	if fp.filterGetter != nil {
-		filter = fp.filterGetter(isVertical, scaleFactor)
+		filter = fp.filterGetter(isVertical)
 	}
 	if filter == nil {
 		// Our default filter
@@ -439,7 +439,7 @@ func (fp *FPObject) SetFilterGetter(gff FilterGetter) {
 // filter.
 // If not called, a reasonable default will be used (currently Lanczos-2).
 func (fp *FPObject) SetFilter(fpf *Filter) {
-	fp.SetFilterGetter(func(isVertical bool, scaleFactor float64) *Filter { return fpf })
+	fp.SetFilterGetter(func(isVertical bool) *Filter { return fpf })
 }
 
 func (fp *FPObject) SetBlurGetter(gbf BlurGetter) {
@@ -449,9 +449,30 @@ func (fp *FPObject) SetBlurGetter(gbf BlurGetter) {
 // SetBlur changes the amount of blurring done when resizing.
 // The default is 1.0. Larger values blur more.
 func (fp *FPObject) SetBlur(blur float64) {
-	fp.blurGetter = func(isVertical bool, scaleFactor float64) float64 {
+	fp.blurGetter = func(isVertical bool) float64 {
 		return blur
 	}
+}
+
+// Returns the current scale factor (target size divided by source size)
+// for the given dimension.
+// This is only valid during or after Resize() -- it's meant to be used by
+// callback functions, so that the filter to use could be selected based on
+// this information.
+func (fp *FPObject) ScaleFactor(isVertical bool) float64 {
+	if isVertical {
+		return float64(fp.dstH) / float64(fp.srcH)
+	}
+	return float64(fp.dstW) / float64(fp.srcW)
+}
+
+// Returns true if the source image has any pixels that are not fully opaque,
+// or transparency is otherwise needed to process the image.
+// This is only valid during or after Resize() -- it's meant to be used by
+// callback functions, so that the filter to use could be selected based on
+// this information.
+func (fp *FPObject) HasTransparency() bool {
+	return fp.hasTransparency
 }
 
 // The standard input ColorConverter.
