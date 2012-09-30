@@ -33,6 +33,8 @@ type FPObject struct {
 	outputCCF      ColorConverter
 	outputCCFFlags uint32
 
+	inputCCLookupTable16 *[65536]float32 // color conversion cache
+
 	progressCallback func(msg string)
 }
 
@@ -282,17 +284,47 @@ func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage, dstW int) {
 	}
 }
 
+func (fp *FPObject) makeInputCCLookupTable() {
+	if fp.inputCCF == nil {
+		return
+	}
+	if (fp.inputCCFFlags & CCFFlagNoCache) != 0 {
+		return
+	}
+	if (fp.inputCCFFlags & CCFFlagWholePixels) != 0 {
+		return
+	}
+	if fp.srcW * fp.srcH < 16384 {
+		// Don't bother with a lookup table if the image is very small.
+		// It's hard to estimate what the threshold should be, but accuracy is not
+		// very important here.
+		return
+	}
+
+	fp.progressMsgf("Creating input color correction lookup table")
+
+	fp.inputCCLookupTable16 = new([65536]float32)
+	for i := 0; i<65536; i++ {
+		fp.inputCCLookupTable16[i] = float32(i)/65535.0
+	}
+	fp.inputCCF(fp.inputCCLookupTable16[:])
+}
+
 // Copies(&converts) from fp.srcImg to the given image.
 func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 	var i, j int
 	var nSamples int
 	var r, g, b, a uint32
-	var clr [4]float32
+	var clr [4]float32 // TODO: Maybe this should be a slice (of im.Pix)
 	var srcclr color.Color
 
 	if int64(fp.srcW)*int64(fp.srcH) > maxImagePixels {
 		return errors.New("Source image too large to process")
 	}
+
+	fp.makeInputCCLookupTable()
+
+	fp.progressMsgf("Converting to FPImage format")
 
 	// Allocate the pixel array
 	im.Rect.Min.X = 0
@@ -329,11 +361,17 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 				im.Pix[j*im.Stride+4*i+3] = float32(a) / 65535.0
 			} else if a == 65535 {
 				// Fast path for fully-opaque pixels
-				clr[0] = float32(r) / 65535.0
-				clr[1] = float32(g) / 65535.0
-				clr[2] = float32(b) / 65535.0
 				// Convert to linear color.
-				fp.inputCCF(clr[0:3])
+				if fp.inputCCLookupTable16 != nil {
+					clr[0] = fp.inputCCLookupTable16[r]
+					clr[1] = fp.inputCCLookupTable16[g]
+					clr[2] = fp.inputCCLookupTable16[b]
+				} else {
+					clr[0] = float32(r) / 65535.0
+					clr[1] = float32(g) / 65535.0
+					clr[2] = float32(b) / 65535.0
+					fp.inputCCF(clr[0:3])
+				}
 				// Store
 				im.Pix[j*im.Stride+4*i+0] = clr[0]
 				im.Pix[j*im.Stride+4*i+1] = clr[1]
@@ -351,6 +389,8 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 				clr[1] /= clr[3]
 				clr[2] /= clr[3]
 				// Convert to linear color.
+				// (inputCCLookupTable16 could be used, but wouldn't be as accurate,
+				// because the colors won't appear in it exactly.)
 				fp.inputCCF(clr[0:3])
 				// Convert back to associated alpha, and store.
 				im.Pix[j*im.Stride+4*i+0] = clr[0] * clr[3]
@@ -566,7 +606,6 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 
 	if fp.srcFPImage == nil {
 		fp.srcFPImage = new(FPImage)
-		fp.progressMsgf("Converting to FPImage format")
 		err = fp.copySrcToFPImage(fp.srcFPImage)
 		if err != nil {
 			return nil, err
