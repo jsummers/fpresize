@@ -40,7 +40,7 @@ type FPObject struct {
 // a new colorspace, in-place.
 // If CCFFlagWholePixels is set, the first sample is Red, then Green, Blue,
 // Red, Green, Blue, etc.
-type ColorConverter func(x []float64)
+type ColorConverter func(x []float32)
 
 const (
 	// If set via Set*ColorConverterFlags(), results from color conversion will
@@ -287,9 +287,7 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 	var i, j int
 	var nSamples int
 	var r, g, b, a uint32
-	// We prefer to use high-precision (float64) for intermediate values
-	// when doing colorspace conversion.
-	var clr [4]float64
+	var clr [4]float32
 	var srcclr color.Color
 
 	if int64(fp.srcW)*int64(fp.srcH) > maxImagePixels {
@@ -331,23 +329,23 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 				im.Pix[j*im.Stride+4*i+3] = float32(a) / 65535.0
 			} else if a == 65535 {
 				// Fast path for fully-opaque pixels
-				clr[0] = float64(r) / 65535.0
-				clr[1] = float64(g) / 65535.0
-				clr[2] = float64(b) / 65535.0
+				clr[0] = float32(r) / 65535.0
+				clr[1] = float32(g) / 65535.0
+				clr[2] = float32(b) / 65535.0
 				// Convert to linear color.
 				fp.inputCCF(clr[0:3])
 				// Store
-				im.Pix[j*im.Stride+4*i+0] = float32(clr[0])
-				im.Pix[j*im.Stride+4*i+1] = float32(clr[1])
-				im.Pix[j*im.Stride+4*i+2] = float32(clr[2])
+				im.Pix[j*im.Stride+4*i+0] = clr[0]
+				im.Pix[j*im.Stride+4*i+1] = clr[1]
+				im.Pix[j*im.Stride+4*i+2] = clr[2]
 				im.Pix[j*im.Stride+4*i+3] = 1.0
 			} else {
 				// Partial transparency, with color correction.
 				// Convert to floating point.
-				clr[0] = float64(r) / 65535.0
-				clr[1] = float64(g) / 65535.0
-				clr[2] = float64(b) / 65535.0
-				clr[3] = float64(a) / 65535.0
+				clr[0] = float32(r) / 65535.0
+				clr[1] = float32(g) / 65535.0
+				clr[2] = float32(b) / 65535.0
+				clr[3] = float32(a) / 65535.0
 				// Convert to unassociated alpha, so that we can do color conversion.
 				clr[0] /= clr[3]
 				clr[1] /= clr[3]
@@ -355,10 +353,10 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 				// Convert to linear color.
 				fp.inputCCF(clr[0:3])
 				// Convert back to associated alpha, and store.
-				im.Pix[j*im.Stride+4*i+0] = float32(clr[0] * clr[3])
-				im.Pix[j*im.Stride+4*i+1] = float32(clr[1] * clr[3])
-				im.Pix[j*im.Stride+4*i+2] = float32(clr[2] * clr[3])
-				im.Pix[j*im.Stride+4*i+3] = float32(clr[3])
+				im.Pix[j*im.Stride+4*i+0] = clr[0] * clr[3]
+				im.Pix[j*im.Stride+4*i+1] = clr[1] * clr[3]
+				im.Pix[j*im.Stride+4*i+2] = clr[2] * clr[3]
+				im.Pix[j*im.Stride+4*i+3] = clr[3]
 			}
 		}
 	}
@@ -369,14 +367,14 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 //           to: target colorspace, associated alpha, samples clamped to [0,1]
 func (fp *FPObject) convertDstFPImage(im *FPImage) {
 	var i, j, k int
-	var clr [4]float64
+	var clr [4]float32
 
 	for j = 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
 		for i = 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
 			if !fp.hasTransparency {
 				clr[3] = 1.0
 			} else {
-				clr[3] = float64(im.Pix[j*im.Stride+i*4+3]) // alpha value
+				clr[3] = float32(im.Pix[j*im.Stride+i*4+3]) // alpha value
 				if clr[3] <= 0.0 {                          // Fully transparent
 					im.Pix[j*im.Stride+i*4+0] = 0.0
 					im.Pix[j*im.Stride+i*4+1] = 0.0
@@ -388,9 +386,9 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 					clr[3] = 1.0
 				}
 			}
-			clr[0] = float64(im.Pix[j*im.Stride+i*4+0])
-			clr[1] = float64(im.Pix[j*im.Stride+i*4+1])
-			clr[2] = float64(im.Pix[j*im.Stride+i*4+2])
+			clr[0] = float32(im.Pix[j*im.Stride+i*4+0])
+			clr[1] = float32(im.Pix[j*im.Stride+i*4+1])
+			clr[2] = float32(im.Pix[j*im.Stride+i*4+2])
 			// Clamp to [0,1], and convert to unassociated alpha
 			for k = 0; k < 3; k++ {
 				if fp.hasTransparency {
@@ -408,10 +406,10 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 				fp.outputCCF(clr[0:3])
 			}
 			// Overwrite the old value (leave it as unassociated alpha)
-			im.Pix[j*im.Stride+i*4+0] = float32(clr[0])
-			im.Pix[j*im.Stride+i*4+1] = float32(clr[1])
-			im.Pix[j*im.Stride+i*4+2] = float32(clr[2])
-			im.Pix[j*im.Stride+i*4+3] = float32(clr[3])
+			im.Pix[j*im.Stride+i*4+0] = clr[0]
+			im.Pix[j*im.Stride+i*4+1] = clr[1]
+			im.Pix[j*im.Stride+i*4+2] = clr[2]
+			im.Pix[j*im.Stride+i*4+3] = clr[3]
 		}
 	}
 }
@@ -476,23 +474,23 @@ func (fp *FPObject) HasTransparency() bool {
 }
 
 // The standard input ColorConverter.
-func SRGBToLinear(s []float64) {
+func SRGBToLinear(s []float32) {
 	for k := range s {
 		if s[k] <= 0.0404482362771082 {
 			s[k] /= 12.92
 		} else {
-			s[k] = math.Pow((s[k]+0.055)/1.055, 2.4)
+			s[k] = float32(math.Pow(float64((s[k]+0.055)/1.055), 2.4))
 		}
 	}
 }
 
 // The standard output ColorConverter.
-func LinearTosRGB(s []float64) {
+func LinearTosRGB(s []float32) {
 	for k := range s {
 		if s[k] <= 0.00313066844250063 {
 			s[k] *= 12.92
 		} else {
-			s[k] = 1.055*math.Pow(s[k], 1.0/2.4) - 0.055
+			s[k] = float32(1.055*math.Pow(float64(s[k]), 1.0/2.4) - 0.055)
 		}
 	}
 }
