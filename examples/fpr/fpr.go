@@ -7,8 +7,8 @@ package main
 
 import "fmt"
 import "os"
-import "strconv"
 import "time"
+import "flag"
 import "runtime"
 import "image"
 import "image/png"
@@ -66,18 +66,20 @@ func progressMsg(msg string) {
 	lastMsgTime = now
 }
 
-func resizeMain(srcFilename, dstFilename string, dstH int) error {
+func resizeMain(options *options_type) error {
 	var err error
 	var srcBounds image.Rectangle
 	var resizedImage *fpresize.FPImage
 	var srcImg image.Image
-	var srcW, srcH, dstW int
+	var srcW, srcH, dstW, dstH int
 
 	// Allow more than one thread to be used by this process, if more than one CPU exists.
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
+	dstH = options.height
+
 	progressMsg("Reading source file")
-	srcImg, err = readImageFromFile(srcFilename)
+	srcImg, err = readImageFromFile(options.srcFilename)
 	if err != nil {
 		return err
 	}
@@ -143,7 +145,7 @@ func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	nrgbaResizedImage := resizedImage.CopyToNRGBA()
 
 	progressMsg("Writing target file")
-	err = writeImageToFile(nrgbaResizedImage, dstFilename)
+	err = writeImageToFile(nrgbaResizedImage, options.dstFilename)
 	if err != nil {
 		return err
 	}
@@ -152,29 +154,39 @@ func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	return nil
 }
 
-func usage() {
-	fmt.Printf("usage: fpr -h <height> <source-file> <target.png>\n")
+type options_type struct {
+	height      int
+	srcFilename string
+	dstFilename string
 }
 
 func main() {
-	var srcFilename, dstFilename string
-	var dstH int
+	options := new(options_type)
 
-	// TODO: use the "flag" package for command line parsing.
-	if len(os.Args) != 5 {
-		usage()
-		return
-	}
-	if os.Args[1] != "-h" {
-		usage()
-		return
+	// Replace the standard flag.Usage function
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  fpr [options] <source-file> <target.png>\n")
+		flag.PrintDefaults()
 	}
 
-	dstH, _ = strconv.Atoi(os.Args[2])
-	srcFilename = os.Args[3]
-	dstFilename = os.Args[4]
+	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
+	flag.Parse()
 
-	err := resizeMain(srcFilename, dstFilename, dstH)
+	if flag.NArg() != 2 {
+		flag.Usage()
+		return
+	}
+
+	if options.height < 1 {
+		flag.Usage()
+		return
+	}
+
+	options.srcFilename = flag.Arg(0)
+	options.dstFilename = flag.Arg(1)
+
+	err := resizeMain(options)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err.Error())
 	}
