@@ -294,7 +294,7 @@ func (fp *FPObject) makeInputCCLookupTable() {
 	if (fp.inputCCFFlags & CCFFlagWholePixels) != 0 {
 		return
 	}
-	if fp.srcW * fp.srcH < 16384 {
+	if fp.srcW*fp.srcH < 16384 {
 		// Don't bother with a lookup table if the image is very small.
 		// It's hard to estimate what the threshold should be, but accuracy is not
 		// very important here.
@@ -304,8 +304,8 @@ func (fp *FPObject) makeInputCCLookupTable() {
 	fp.progressMsgf("Creating input color correction lookup table")
 
 	fp.inputCCLookupTable16 = new([65536]float32)
-	for i := 0; i<65536; i++ {
-		fp.inputCCLookupTable16[i] = float32(i)/65535.0
+	for i := 0; i < 65536; i++ {
+		fp.inputCCLookupTable16[i] = float32(i) / 65535.0
 	}
 	fp.inputCCF(fp.inputCCLookupTable16[:])
 }
@@ -315,7 +315,6 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 	var i, j int
 	var nSamples int
 	var r, g, b, a uint32
-	var clr [4]float32 // TODO: Maybe this should be a slice (of im.Pix)
 	var srcclr color.Color
 
 	if int64(fp.srcW)*int64(fp.srcH) > maxImagePixels {
@@ -344,112 +343,111 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 				fp.hasTransparency = true
 			}
 
+			// Identify the slice of samples representing this pixel in the
+			// converted image.
+			sam := im.Pix[j*im.Stride+4*i : j*im.Stride+4*i+4]
+
 			// Choose from among several methods of converting the pixel to our
 			// desired format.
 			if a == 0 {
 				// Handle fully-transparent pixels quickly.
 				// Color correction is irrelevant here.
-				im.Pix[j*im.Stride+4*i+0] = 0
-				im.Pix[j*im.Stride+4*i+1] = 0
-				im.Pix[j*im.Stride+4*i+2] = 0
-				im.Pix[j*im.Stride+4*i+3] = 0
+				// Nothing to do: the samples will have been initialized to 0.0,
+				// which is what we want.
 			} else if fp.inputCCF == nil {
-				// No color correction
-				im.Pix[j*im.Stride+4*i+0] = float32(r) / 65535.0
-				im.Pix[j*im.Stride+4*i+1] = float32(g) / 65535.0
-				im.Pix[j*im.Stride+4*i+2] = float32(b) / 65535.0
-				im.Pix[j*im.Stride+4*i+3] = float32(a) / 65535.0
+				// No color correction; just convert from uint16(0 ... 65535) to float(0.0 ... 1.0)
+				sam[0] = float32(r) / 65535.0
+				sam[1] = float32(g) / 65535.0
+				sam[2] = float32(b) / 65535.0
+				sam[3] = float32(a) / 65535.0
 			} else if a == 65535 {
-				// Fast path for fully-opaque pixels
-				// Convert to linear color.
+				// Fast path for fully-opaque pixels.
 				if fp.inputCCLookupTable16 != nil {
-					clr[0] = fp.inputCCLookupTable16[r]
-					clr[1] = fp.inputCCLookupTable16[g]
-					clr[2] = fp.inputCCLookupTable16[b]
+					// Convert to linear color, using a lookup table.
+					sam[0] = fp.inputCCLookupTable16[r]
+					sam[1] = fp.inputCCLookupTable16[g]
+					sam[2] = fp.inputCCLookupTable16[b]
 				} else {
-					clr[0] = float32(r) / 65535.0
-					clr[1] = float32(g) / 65535.0
-					clr[2] = float32(b) / 65535.0
-					fp.inputCCF(clr[0:3])
+					// Convert to linear color, without a lookup table.
+					sam[0] = float32(r) / 65535.0
+					sam[1] = float32(g) / 65535.0
+					sam[2] = float32(b) / 65535.0
+					fp.inputCCF(sam[0:3])
 				}
-				// Store
-				im.Pix[j*im.Stride+4*i+0] = clr[0]
-				im.Pix[j*im.Stride+4*i+1] = clr[1]
-				im.Pix[j*im.Stride+4*i+2] = clr[2]
-				im.Pix[j*im.Stride+4*i+3] = 1.0
+				sam[3] = 1.0
 			} else {
 				// Partial transparency, with color correction.
 				// Convert to floating point.
-				clr[0] = float32(r) / 65535.0
-				clr[1] = float32(g) / 65535.0
-				clr[2] = float32(b) / 65535.0
-				clr[3] = float32(a) / 65535.0
+				sam[0] = float32(r) / 65535.0
+				sam[1] = float32(g) / 65535.0
+				sam[2] = float32(b) / 65535.0
+				sam[3] = float32(a) / 65535.0
 				// Convert to unassociated alpha, so that we can do color conversion.
-				clr[0] /= clr[3]
-				clr[1] /= clr[3]
-				clr[2] /= clr[3]
+				sam[0] /= sam[3]
+				sam[1] /= sam[3]
+				sam[2] /= sam[3]
 				// Convert to linear color.
 				// (inputCCLookupTable16 could be used, but wouldn't be as accurate,
 				// because the colors won't appear in it exactly.)
-				fp.inputCCF(clr[0:3])
-				// Convert back to associated alpha, and store.
-				im.Pix[j*im.Stride+4*i+0] = clr[0] * clr[3]
-				im.Pix[j*im.Stride+4*i+1] = clr[1] * clr[3]
-				im.Pix[j*im.Stride+4*i+2] = clr[2] * clr[3]
-				im.Pix[j*im.Stride+4*i+3] = clr[3]
+				fp.inputCCF(sam[0:3])
+				// Convert back to associated alpha.
+				sam[0] *= sam[3]
+				sam[1] *= sam[3]
+				sam[2] *= sam[3]
 			}
 		}
 	}
 	return nil
 }
 
-// Convert from: linear colorspace, associated alpha
-//           to: target colorspace, associated alpha, samples clamped to [0,1]
+// Convert from:
+//  * linear colorspace
+//  * associated alpha
+//  * alpha samples may be meaningless if image is opaque
+// to:
+//  * target colorspace
+//  * associated alpha
+//  * samples clamped to [0,1]
+//  * alpha samples always valid
 func (fp *FPObject) convertDstFPImage(im *FPImage) {
 	var i, j, k int
-	var clr [4]float32
 
 	for j = 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
 		for i = 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
+
+			// Identify the slice of samples representing the pixel we're updating.
+			sam := im.Pix[j*im.Stride+i*4 : j*im.Stride+i*4+4]
+
 			if !fp.hasTransparency {
-				clr[3] = 1.0
+				sam[3] = 1.0
 			} else {
-				clr[3] = float32(im.Pix[j*im.Stride+i*4+3]) // alpha value
-				if clr[3] <= 0.0 {                          // Fully transparent
-					im.Pix[j*im.Stride+i*4+0] = 0.0
-					im.Pix[j*im.Stride+i*4+1] = 0.0
-					im.Pix[j*im.Stride+i*4+2] = 0.0
-					im.Pix[j*im.Stride+i*4+3] = 0.0
+				if sam[3] <= 0.0 { // Fully transparent
+					sam[0] = 0.0
+					sam[1] = 0.0
+					sam[2] = 0.0
+					sam[3] = 0.0
 					continue
 				}
-				if clr[3] > 1.0 {
-					clr[3] = 1.0
+				if sam[3] > 1.0 {
+					sam[3] = 1.0
 				}
 			}
-			clr[0] = float32(im.Pix[j*im.Stride+i*4+0])
-			clr[1] = float32(im.Pix[j*im.Stride+i*4+1])
-			clr[2] = float32(im.Pix[j*im.Stride+i*4+2])
 			// Clamp to [0,1], and convert to unassociated alpha
 			for k = 0; k < 3; k++ {
 				if fp.hasTransparency {
-					clr[k] /= clr[3]
+					sam[k] /= sam[3]
 				}
-				if clr[k] < 0.0 {
-					clr[k] = 0.0
+				if sam[k] < 0.0 {
+					sam[k] = 0.0
 				}
-				if clr[k] > 1.0 {
-					clr[k] = 1.0
+				if sam[k] > 1.0 {
+					sam[k] = 1.0
 				}
 			}
 			// Convert from linear color
 			if fp.outputCCF != nil {
-				fp.outputCCF(clr[0:3])
+				fp.outputCCF(sam[0:3])
 			}
-			// Overwrite the old value (leave it as unassociated alpha)
-			im.Pix[j*im.Stride+i*4+0] = clr[0]
-			im.Pix[j*im.Stride+i*4+1] = clr[1]
-			im.Pix[j*im.Stride+i*4+2] = clr[2]
-			im.Pix[j*im.Stride+i*4+3] = clr[3]
 		}
 	}
 }
