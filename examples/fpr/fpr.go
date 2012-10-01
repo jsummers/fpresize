@@ -9,6 +9,7 @@ import "fmt"
 import "os"
 import "strconv"
 import "time"
+import "runtime"
 import "image"
 import "image/png"
 import _ "image/jpeg"
@@ -71,6 +72,9 @@ func resizeMain(srcFilename, dstFilename string, dstH int) error {
 	var resizedImage *fpresize.FPImage
 	var srcImg image.Image
 	var srcW, srcH, dstW int
+
+	// Allow more than one thread to be used by this process, if more than one CPU exists.
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	progressMsg("Reading source file")
 	srcImg, err = readImageFromFile(srcFilename)

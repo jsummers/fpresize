@@ -9,6 +9,7 @@ import "image/color"
 import "math"
 import "fmt"
 import "errors"
+import "runtime"
 
 // FPObject is an opaque struct that tracks the state of the resize operation.
 // There usually should be one FPObject per source image.
@@ -36,6 +37,10 @@ type FPObject struct {
 	inputCCLookupTable16 *[65536]float32 // color conversion cache
 
 	progressCallback func(msg string)
+
+	numWorkers int // Number of goroutines we will use
+	maxWorkers int // Max number requested by caller. 0 = not set.
+
 }
 
 // A ColorConverter is passed a slice of samples. It converts them all to
@@ -62,9 +67,9 @@ type FilterGetter func(isVertical bool) *Filter
 type BlurGetter func(isVertical bool) float64
 
 type fpWeight struct {
-	srcSam int
-	dstSam int
-	weight float32
+	srcSamIdx int
+	dstSamIdx int
+	weight    float32
 }
 
 // For convenience, we (usually) don't supply negative arguments to filters.
@@ -162,8 +167,8 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 			v_count++
 
 			// Add this weight to the list (it will be normalized later)
-			weightList[weightsUsed].srcSam = srcSamIdx
-			weightList[weightsUsed].dstSam = dstSamIdx
+			weightList[weightsUsed].srcSamIdx = srcSamIdx
+			weightList[weightsUsed].dstSamIdx = dstSamIdx
 			weightList[weightsUsed].weight = float32(v)
 			weightsUsed++
 		}
@@ -189,20 +194,36 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 	return weightList
 }
 
-// A reference to a set of samples within (presumably) a FPImage object.
-// pix[stride*0] is the first sample; pix[stride*1] is the next, ...
-type sample1dRef struct {
-	sam    []float32
-	stride int
+type resampleWorkItem struct {
+	// src* and dst* are references to a set of samples within (presumably) a FPImage object.
+	// Sam[Stride*0] is the first sample; Sam[Stride*1] is the next, ...
+	srcSam     []float32
+	dstSam     []float32
+	srcStride  int
+	dstStride  int
+	weightList []fpWeight
+	stopNow    bool
 }
 
-// Use the given weightlist to resize a set of samples onto another set of samples.
-func resample1d(src1d *sample1dRef, dst1d *sample1dRef, weightList []fpWeight) {
-	for i := range weightList {
-		// This is the line of code that actually does the resampling. (But All the
-		// interesting things were precalculated in createWeightList().)
-		dst1d.sam[weightList[i].dstSam*dst1d.stride] += src1d.sam[weightList[i].srcSam*
-			src1d.stride] * weightList[i].weight
+// Read workItems (each representing a row or column to resample) from workQueue,
+// and resample them.
+func resampleWorker(workQueue chan resampleWorkItem) {
+	var wi resampleWorkItem
+
+	for {
+		// Get next thing to do
+		wi = <-workQueue
+		if wi.stopNow {
+			return
+		}
+
+		// resample1d(&wi)
+		for i := range wi.weightList {
+			// This is the line of code that actually does the resampling. (But All the
+			// interesting things were precalculated in createWeightList().)
+			wi.dstSam[wi.weightList[i].dstSamIdx*wi.dstStride] += wi.srcSam[wi.weightList[i].srcSamIdx*
+				wi.srcStride] * wi.weightList[i].weight
+		}
 	}
 }
 
@@ -211,10 +232,10 @@ func resample1d(src1d *sample1dRef, dst1d *sample1dRef, weightList []fpWeight) {
 // resizeHeight sets its fields, and makes its origin (0,0).
 func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
 	var nSamples int
-	var src1d sample1dRef
-	var dst1d sample1dRef
 	var srcH int
 	var w int // width of both images
+	var wi resampleWorkItem
+	var i int
 
 	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstH)
 
@@ -230,18 +251,36 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
 	nSamples = dst.Stride * dstH
 	dst.Pix = make([]float32, nSamples)
 
-	weightList := fp.createWeightList(srcH, dstH, true)
+	wi.weightList = fp.createWeightList(srcH, dstH, true)
+
+	wi.srcStride = src.Stride
+	wi.dstStride = dst.Stride
+
+	workQueue := make(chan resampleWorkItem)
+
+	// Start workers
+	for i = 0; i < fp.numWorkers; i++ {
+		go resampleWorker(workQueue)
+	}
 
 	// Iterate over the columns (of which src and dst have the same number)
 	// Columns of *samples*, that is, not pixels.
-	src1d.stride = src.Stride
-	dst1d.stride = dst.Stride
 	for col := 0; col < 4*w; col++ {
 		if fp.hasTransparency || (col%4 != 3) { // If no transparency, skip over the alpha samples
-			src1d.sam = src.Pix[col:]
-			dst1d.sam = dst.Pix[col:]
-			resample1d(&src1d, &dst1d, weightList)
+			wi.srcSam = src.Pix[col:]
+			wi.dstSam = dst.Pix[col:]
+			// Assign the work to whatever worker happens to be available to receive it.
+			// Note that this stuct is passed by value, so it's okay to modify it and
+			// pass it again.
+			workQueue <- wi
 		}
+	}
+
+	// Tell the workers to stop, and block until they all receive our Stop message.
+	// TODO: This seems kind of crude.
+	wi.stopNow = true
+	for i = 0; i < fp.numWorkers; i++ {
+		workQueue <- wi
 	}
 }
 
@@ -249,10 +288,10 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
 // TODO: Maybe merge resizeWidth & resizeHeight
 func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage, dstW int) {
 	var nSamples int
-	var src1d sample1dRef
-	var dst1d sample1dRef
 	var srcW int
 	var h int // height of both images
+	var wi resampleWorkItem
+	var i int
 
 	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstW)
 
@@ -267,20 +306,32 @@ func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage, dstW int) {
 	nSamples = dst.Stride * h
 	dst.Pix = make([]float32, nSamples)
 
-	weightList := fp.createWeightList(srcW, dstW, false)
+	wi.weightList = fp.createWeightList(srcW, dstW, false)
+
+	wi.srcStride = 4
+	wi.dstStride = 4
+
+	workQueue := make(chan resampleWorkItem)
+
+	for i = 0; i < fp.numWorkers; i++ {
+		go resampleWorker(workQueue)
+	}
 
 	// Iterate over the rows (of which src and dst have the same number)
-	src1d.stride = 4
-	dst1d.stride = 4
 	for row := 0; row < h; row++ {
 		// Iterate over R,G,B,A
 		for k := 0; k < 4; k++ {
 			if fp.hasTransparency || k != 3 {
-				src1d.sam = src.Pix[row*src.Stride+k:]
-				dst1d.sam = dst.Pix[row*dst.Stride+k:]
-				resample1d(&src1d, &dst1d, weightList)
+				wi.srcSam = src.Pix[row*src.Stride+k:]
+				wi.dstSam = dst.Pix[row*dst.Stride+k:]
+				workQueue <- wi
 			}
 		}
+	}
+
+	wi.stopNow = true
+	for i = 0; i < fp.numWorkers; i++ {
+		workQueue <- wi
 	}
 }
 
@@ -583,11 +634,23 @@ func (fp *FPObject) progressMsgf(format string, a ...interface{}) {
 	fp.progressCallback(msg)
 }
 
+func (fp *FPObject) SetMaxWorkerThreads(n int) {
+	fp.maxWorkers = n
+}
+
 // Resize performs the resize, and returns a pointer to an image that uses the
 // custom FPImage type.
 func (fp *FPObject) Resize() (*FPImage, error) {
 	var err error
 	var intermedFPImage *FPImage // The image after resizing vertically
+
+	fp.numWorkers = runtime.GOMAXPROCS(0)
+	if fp.numWorkers < 1 {
+		fp.numWorkers = 1
+	}
+	if fp.maxWorkers > 0 && fp.numWorkers > fp.maxWorkers {
+		fp.numWorkers = fp.maxWorkers
+	}
 
 	if int64(fp.dstW)*int64(fp.dstH) > maxImagePixels {
 		return nil, errors.New("Target image too large")
