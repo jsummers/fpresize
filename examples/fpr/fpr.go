@@ -91,8 +91,26 @@ func resizeMain(options *options_type) error {
 
 	fp.SetSourceImage(srcImg)
 
-	// An example of how to specify the filter to use:
-	// fp.SetFilter(fpresize.MakeLanczosFilter(3))
+	if options.filterName == "auto" {
+	} else if options.filterName == "lanczos2" {
+		fp.SetFilter(fpresize.MakeLanczosFilter(2))
+	} else if options.filterName == "lanczos3" {
+		fp.SetFilter(fpresize.MakeLanczosFilter(3))
+	} else if options.filterName == "mix" {
+		fp.SetFilter(fpresize.MakePixelMixingFilter())
+	} else if options.filterName == "mitchell" {
+		fp.SetFilter(fpresize.MakeCubicFilter(1.0/3.0, 1.0/3.0))
+	} else if options.filterName == "catrom" {
+		fp.SetFilter(fpresize.MakeCubicFilter(0.0, 0.5))
+	} else if options.filterName == "hermite" {
+		fp.SetFilter(fpresize.MakeCubicFilter(0.0, 0.0))
+	} else if options.filterName == "gaussian" {
+		fp.SetFilter(fpresize.MakeGaussianFilter())
+	} else if options.filterName == "triangle" {
+		fp.SetFilter(fpresize.MakeTriangleFilter())
+	} else {
+		return fmt.Errorf("Unrecognized filter %+q", options.filterName)
+	}
 
 	// The filter to use can be different for the vertical and horizontal
 	// dimensions. It can also depend on other available information, such
@@ -106,7 +124,9 @@ func resizeMain(options *options_type) error {
 
 	// To blur the image, call SetBlur(). Not all filters are suitable for blurring.
 	// A Gaussian filter is a good choice.
-	// fp.SetBlur(3.0)
+	if options.blur != 1.0 {
+		fp.SetBlur(options.blur)
+	}
 
 	// Decide on the width of the resized image.
 	srcBounds = srcImg.Bounds()
@@ -155,6 +175,8 @@ type options_type struct {
 	height      int
 	srcFilename string
 	dstFilename string
+	filterName  string
+	blur        float64
 	verbose     bool
 	debug       bool
 }
@@ -170,6 +192,8 @@ func main() {
 	}
 
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
+	flag.StringVar(&options.filterName, "filter", "auto", "Resampling filter to use")
+	flag.Float64Var(&options.blur, "blur", 1.0, "Amount to blur")
 	flag.BoolVar(&options.verbose, "verbose", false, "Verbose output")
 	flag.BoolVar(&options.debug, "debug", false, "Debugging output")
 	flag.Parse()
