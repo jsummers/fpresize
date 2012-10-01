@@ -16,9 +16,6 @@ import _ "image/jpeg"
 import _ "image/gif"
 import "github.com/jsummers/fpresize"
 
-var showProgress bool = false
-var showTimes bool = true
-
 func readImageFromFile(srcFilename string) (image.Image, error) {
 	var err error
 	var srcImg image.Image
@@ -52,12 +49,12 @@ func writeImageToFile(img image.Image, dstFilename string) error {
 
 var lastMsgTime time.Time
 
-func progressMsg(msg string) {
-	if !showProgress {
+func progressMsg(options *options_type, msg string) {
+	if !options.verbose && !options.debug {
 		return
 	}
 	now := time.Now()
-	if showTimes {
+	if options.debug {
 		if !lastMsgTime.IsZero() {
 			fmt.Printf("%v\n", now.Sub(lastMsgTime))
 		}
@@ -78,7 +75,7 @@ func resizeMain(options *options_type) error {
 
 	dstH = options.height
 
-	progressMsg("Reading source file")
+	progressMsg(options, "Reading source file")
 	srcImg, err = readImageFromFile(options.srcFilename)
 	if err != nil {
 		return err
@@ -86,7 +83,7 @@ func resizeMain(options *options_type) error {
 
 	fp := new(fpresize.FPObject)
 
-	fp.SetProgressCallback(progressMsg)
+	fp.SetProgressCallback(func(msg string) { progressMsg(options, msg) })
 
 	// To do colorspace-unaware resizing, call the following functions:
 	// fp.SetInputColorConverter(nil)
@@ -141,15 +138,15 @@ func resizeMain(options *options_type) error {
 	// - It's probably faster, because CopyToNRGBA knows about resizedImage's
 	//   internal format, while png.Encode has to use the public accessor
 	//   methods.
-	progressMsg("Converting to NRGBA format")
+	progressMsg(options, "Converting to NRGBA format")
 	nrgbaResizedImage := resizedImage.CopyToNRGBA()
 
-	progressMsg("Writing target file")
+	progressMsg(options, "Writing target file")
 	err = writeImageToFile(nrgbaResizedImage, options.dstFilename)
 	if err != nil {
 		return err
 	}
-	progressMsg("Done")
+	progressMsg(options, "Done")
 
 	return nil
 }
@@ -158,6 +155,8 @@ type options_type struct {
 	height      int
 	srcFilename string
 	dstFilename string
+	verbose     bool
+	debug       bool
 }
 
 func main() {
@@ -171,6 +170,8 @@ func main() {
 	}
 
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
+	flag.BoolVar(&options.verbose, "verbose", false, "Verbose output")
+	flag.BoolVar(&options.debug, "debug", false, "Debugging output")
 	flag.Parse()
 
 	if flag.NArg() != 2 {
