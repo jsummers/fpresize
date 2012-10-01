@@ -85,9 +85,11 @@ func resizeMain(options *options_type) error {
 
 	fp.SetProgressCallback(func(msg string) { progressMsg(options, msg) })
 
-	// To do colorspace-unaware resizing, call the following functions:
-	// fp.SetInputColorConverter(nil)
-	// fp.SetOutputColorConverter(nil)
+	if options.noGamma {
+		// To do colorspace-unaware resizing, call the following functions:
+		fp.SetInputColorConverter(nil)
+		fp.SetOutputColorConverter(nil)
+	}
 
 	fp.SetSourceImage(srcImg)
 
@@ -177,6 +179,7 @@ type options_type struct {
 	dstFilename string
 	filterName  string
 	blur        float64
+	noGamma     bool
 	verbose     bool
 	debug       bool
 }
@@ -194,6 +197,7 @@ func main() {
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
 	flag.StringVar(&options.filterName, "filter", "auto", "Resampling filter to use")
 	flag.Float64Var(&options.blur, "blur", 1.0, "Amount to blur")
+	flag.BoolVar(&options.noGamma, "nogamma", false, "Disable color correction")
 	flag.BoolVar(&options.verbose, "verbose", false, "Verbose output")
 	flag.BoolVar(&options.debug, "debug", false, "Debugging output")
 	flag.Parse()
