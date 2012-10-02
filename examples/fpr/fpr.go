@@ -175,25 +175,13 @@ func resizeMain(options *options_type) error {
 	fp.SetTargetBounds(image.Rect(0, 0, dstW, dstH))
 
 	// Do the resize.
-	resizedImage, err = fp.Resize()
+	if outputFileFormat == ffPNG {
+		nrgbaResizedImage, err = fp.ResizeToNRGBA()
+	} else {
+		resizedImage, err = fp.Resize()
+	}
 	if err != nil {
 		return err
-	}
-
-	// It's okay to pass resizedImage directly to png.Encode (etc.), but there
-	// are some reasons to convert it to an NRGBA image first:
-	// - The current version of the image.png package usually writes PNG files
-	//   with a sample depth of 16 bits, so the files are very large. But if you
-	//   pass it an NRGBA image, it uses 8 bits, which was probably what you
-	//   really wanted.
-	// - It's very slightly more accurate, because we may avoid converting to
-	//   associated alpha and back to unassociated alpha.
-	// - It's probably faster, because CopyToNRGBA knows about resizedImage's
-	//   internal format, while png.Encode has to use the public accessor
-	//   methods.
-	if outputFileFormat == ffPNG {
-		progressMsg(options, "Converting to NRGBA format")
-		nrgbaResizedImage = resizedImage.CopyToNRGBA()
 	}
 
 	progressMsg(options, "Writing target file")

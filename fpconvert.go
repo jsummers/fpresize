@@ -38,6 +38,32 @@ func (fp *FPObject) makeInputCCLookupTable() {
 	fp.inputCCF(fp.inputCCLookupTable16[:])
 }
 
+func (fp *FPObject) makeOutputCCLookupTable() {
+	if fp.inputCCF == nil {
+		return
+	}
+	if (fp.outputCCFFlags & CCFFlagNoCache) != 0 {
+		return
+	}
+	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
+		return
+	}
+	if fp.dstW*fp.dstH < 16384 {
+		return
+	}
+
+	fp.progressMsgf("Creating output color correction lookup table")
+
+	// TODO: This size needs to vary depending on how much precision we need.
+	fp.outputCCTableSize = 10000
+
+	fp.outputCCLookupTable = make([]float32,fp.outputCCTableSize)
+	for i := 0; i < fp.outputCCTableSize; i++ {
+		fp.outputCCLookupTable[i] = float32(i) / float32(fp.outputCCTableSize)
+	}
+	fp.outputCCF(fp.outputCCLookupTable)
+}
+
 // Copies(&converts) from fp.srcImg to the given image.
 func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 	var i, j int
@@ -152,6 +178,10 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 func (fp *FPObject) convertDstFPImage(im *FPImage) {
 	var i, j, k int
 
+	// fp.makeOutputCCLookupTable()
+
+	fp.progressMsgf("Converting to target colorspace")
+
 	for j = 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
 		for i = 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
 
@@ -186,7 +216,13 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 			}
 			// Convert from linear color
 			if fp.outputCCF != nil {
-				fp.outputCCF(sam[0:3])
+				if fp.outputCCLookupTable != nil {
+					sam[0] = fp.outputCCLookupTable[int(sam[0]*float32(fp.outputCCTableSize-1)+0.5)]
+					sam[1] = fp.outputCCLookupTable[int(sam[1]*float32(fp.outputCCTableSize-1)+0.5)]
+					sam[2] = fp.outputCCLookupTable[int(sam[2]*float32(fp.outputCCTableSize-1)+0.5)]
+				} else {
+					fp.outputCCF(sam[0:3])
+				}
 			}
 		}
 	}
@@ -195,7 +231,7 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 // CopyToNRGBA is a utility function, useful when writing PNG images,
 // to avoid having to convert to associated alpha and then back to
 // unassociated alpha.
-func (fpi *FPImage) CopyToNRGBA() *image.NRGBA {
+func (fpi *FPImage) copyToNRGBA() *image.NRGBA {
 	dst := image.NewNRGBA(fpi.Bounds())
 	for j := 0; j < (fpi.Rect.Max.Y - fpi.Rect.Min.Y); j++ {
 		for i := 0; i < (fpi.Rect.Max.X-fpi.Rect.Min.X)*4; i++ {
@@ -205,7 +241,7 @@ func (fpi *FPImage) CopyToNRGBA() *image.NRGBA {
 	return dst
 }
 
-func (fpi *FPImage) CopyToNRGBA64() *image.NRGBA64 {
+func (fpi *FPImage) copyToNRGBA64() *image.NRGBA64 {
 	var n uint32
 	dst := image.NewNRGBA64(fpi.Bounds())
 	for j := 0; j < (fpi.Rect.Max.Y - fpi.Rect.Min.Y); j++ {

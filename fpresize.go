@@ -15,13 +15,12 @@ import "runtime"
 type FPObject struct {
 	srcImage   image.Image
 	srcFPImage *FPImage
-	dstFPImage *FPImage
 	srcBounds  image.Rectangle
 	dstBounds  image.Rectangle
 	srcW, srcH int
 	dstW, dstH int
 
-	hasTransparency bool
+	hasTransparency bool // Does the source image have transparency?
 
 	filterGetter FilterGetter
 	blurGetter   BlurGetter
@@ -34,12 +33,13 @@ type FPObject struct {
 	outputCCFFlags uint32
 
 	inputCCLookupTable16 *[65536]float32 // color conversion cache
+	outputCCLookupTable  []float32
+	outputCCTableSize    int
 
 	progressCallback func(msg string)
 
-	numWorkers int // Number of goroutines we will use
+	numWorkers int // Number of worker goroutines we will use
 	maxWorkers int // Max number requested by caller. 0 = not set.
-
 }
 
 // A ColorConverter is passed a slice of samples. It converts them all to
@@ -335,12 +335,9 @@ func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage, dstW int) {
 }
 
 // Tell fpresize the image to read.
-// This may or may not make an internal copy of the image -- no promises are
-// made. The source image must remain valid and unchanged until the caller is done
-// calling Resize.
-// Color correction settings must be established before calling SetSourceImage.
-// Only one source image is allowed per FPObject (though multiple target images
-// may be made from it.)
+// Only one source image may be selected per FPObject.
+// Once selected, the image may not be changed until after the last Resize
+// method is called.
 func (fp *FPObject) SetSourceImage(srcImg image.Image) {
 	fp.srcImage = srcImg
 	fp.srcBounds = srcImg.Bounds()
@@ -418,7 +415,8 @@ func LinearTosRGB(s []float32) {
 // Supply a ColorConverter function to use when converting the original colors
 // to the colors in which the resizing will be performed.
 // 
-// This must be called before calling SetSourceImage().
+// This must be called before calling a Resize method, and may not be changed
+// afterward.
 // The default value is SRGBToLinear.
 // This may be nil, for no conversion.
 func (fp *FPObject) SetInputColorConverter(ccf ColorConverter) {
@@ -429,6 +427,8 @@ func (fp *FPObject) SetInputColorConverter(ccf ColorConverter) {
 // Supply a ColorConverter function to use when converting from the colors in
 // which the resizing was performed, to the final colors.
 // 
+// This may be called at any time, and remains in effect for future Resize
+// method calls until it is called again.
 // The default value is LinearTosRGB.
 // This may be nil, for no conversion.
 func (fp *FPObject) SetOutputColorConverter(ccf ColorConverter) {
@@ -469,11 +469,10 @@ func (fp *FPObject) SetMaxWorkerThreads(n int) {
 	fp.maxWorkers = n
 }
 
-// Resize performs the resize, and returns a pointer to an image that uses the
-// custom FPImage type.
-func (fp *FPObject) Resize() (*FPImage, error) {
+func (fp *FPObject) resizeMain() (*FPImage, error) {
 	var err error
 	var intermedFPImage *FPImage // The image after resizing vertically
+	var dstFPImage *FPImage
 
 	fp.numWorkers = runtime.GOMAXPROCS(0)
 	if fp.numWorkers < 1 {
@@ -513,20 +512,47 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 		intermedFPImage = new(FPImage)
 		fp.resizeHeight(fp.srcFPImage, intermedFPImage, fp.dstH)
 
-		fp.dstFPImage = new(FPImage)
-		fp.resizeWidth(intermedFPImage, fp.dstFPImage, fp.dstW)
+		dstFPImage = new(FPImage)
+		fp.resizeWidth(intermedFPImage, dstFPImage, fp.dstW)
 	} else {
 		intermedFPImage = new(FPImage)
 		fp.resizeWidth(fp.srcFPImage, intermedFPImage, fp.dstW)
 
-		fp.dstFPImage = new(FPImage)
-		fp.resizeHeight(intermedFPImage, fp.dstFPImage, fp.dstH)
+		dstFPImage = new(FPImage)
+		fp.resizeHeight(intermedFPImage, dstFPImage, fp.dstH)
 	}
 
-	fp.dstFPImage.Rect = fp.dstBounds
+	dstFPImage.Rect = fp.dstBounds
 
-	fp.progressMsgf("Converting to target colorspace")
-	fp.convertDstFPImage(fp.dstFPImage)
+	return dstFPImage, nil
+}
 
-	return fp.dstFPImage, nil
+// Resize performs the resize, and returns a pointer to an image that
+// uses the custom FPImage type.
+//
+// This function will be deprecated or removed, in favor of specific functions
+// like ResizeToNRGBA.
+func (fp *FPObject) Resize() (*FPImage, error) {
+
+	dstFPImage, err := fp.resizeMain()
+	if err != nil {
+		return nil, err
+	}
+
+	fp.convertDstFPImage(dstFPImage)
+	return dstFPImage, nil
+}
+
+// Resize performs the resize, and returns a pointer to an image that
+// uses the NRGBA format.
+func (fp *FPObject) ResizeToNRGBA() (*image.NRGBA, error) {
+
+	dstFPImage, err := fp.resizeMain()
+	if err != nil {
+		return nil, err
+	}
+
+	fp.convertDstFPImage(dstFPImage)
+	nrgba := dstFPImage.copyToNRGBA()
+	return nrgba, nil
 }
