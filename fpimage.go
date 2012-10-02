@@ -82,29 +82,3 @@ func (fpi *FPImage) At(x, y int) color.Color {
 	fpc.sam[3] = fpi.Pix[y*fpi.Stride+x*4+3]
 	return &fpc
 }
-
-// CopyToNRGBA is a utility function, useful when writing PNG images,
-// to avoid having to convert to associated alpha and then back to
-// unassociated alpha.
-func (fpi *FPImage) CopyToNRGBA() *image.NRGBA {
-	dst := image.NewNRGBA(fpi.Bounds())
-	for j := 0; j < (fpi.Rect.Max.Y - fpi.Rect.Min.Y); j++ {
-		for i := 0; i < (fpi.Rect.Max.X-fpi.Rect.Min.X)*4; i++ {
-			dst.Pix[j*dst.Stride+i] = uint8(fpi.Pix[j*fpi.Stride+i]*255.0 + 0.5)
-		}
-	}
-	return dst
-}
-
-func (fpi *FPImage) CopyToNRGBA64() *image.NRGBA64 {
-	var n uint32
-	dst := image.NewNRGBA64(fpi.Bounds())
-	for j := 0; j < (fpi.Rect.Max.Y - fpi.Rect.Min.Y); j++ {
-		for i := 0; i < (fpi.Rect.Max.X-fpi.Rect.Min.X)*4; i++ {
-			n = uint32(fpi.Pix[j*fpi.Stride+i]*65535.0 + 0.5)
-			dst.Pix[j*dst.Stride+i*2+0] = uint8(n >> 8)
-			dst.Pix[j*dst.Stride+i*2+1] = uint8(n)
-		}
-	}
-	return dst
-}
