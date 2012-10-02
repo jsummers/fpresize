@@ -385,11 +385,23 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 	nSamples = im.Stride * fp.srcH
 	im.Pix = make([]float32, nSamples)
 
+	// If the underlying type of fp.srcImage is RGBA, we can do some performance
+	// optimization.
+	src_as_RGBA, _ := fp.srcImage.(*image.RGBA)
+
 	for j = 0; j < fp.srcH; j++ {
 		for i = 0; i < fp.srcW; i++ {
-			// TODO: Maybe we should be using fpModel.Convert here, in some way.
-			srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
-			r, g, b, a = srcclr.RGBA()
+			// Read a pixel from the source image, into uint16 samples
+			if src_as_RGBA != nil {
+				r = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i])*257
+				g = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i+1])*257
+				b = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i+2])*257
+				a = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i+3])*257
+			} else {
+				srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
+				r, g, b, a = srcclr.RGBA()
+			}
+
 			if a < 65535 {
 				fp.hasTransparency = true
 			}
