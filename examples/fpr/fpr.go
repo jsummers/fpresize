@@ -2,17 +2,20 @@
 // Copyright © 2012 Jason Summers
 
 // fpr is a sample program that uses the fpresize library.
-// Usage: fpr -h <height> <source-file> <target.png>
+// Usage: fpr -h <height> <source-file> <target-file>
 package main
 
 import "fmt"
 import "os"
 import "time"
 import "flag"
+import "path"
+import "strings"
+import "errors"
 import "runtime"
 import "image"
 import "image/png"
-import _ "image/jpeg"
+import "image/jpeg"
 import _ "image/gif"
 import "github.com/jsummers/fpresize"
 
@@ -34,7 +37,7 @@ func readImageFromFile(srcFilename string) (image.Image, error) {
 	return srcImg, nil
 }
 
-func writeImageToFile(img image.Image, dstFilename string) error {
+func writeImageToFile(img image.Image, dstFilename string, outputFileFormat int) error {
 	var err error
 
 	file, err := os.Create(dstFilename)
@@ -43,7 +46,11 @@ func writeImageToFile(img image.Image, dstFilename string) error {
 	}
 	defer file.Close()
 
-	err = png.Encode(file, img)
+	if outputFileFormat == ffJPEG {
+		err = jpeg.Encode(file, img, nil)
+	} else {
+		err = png.Encode(file, img)
+	}
 	return err
 }
 
@@ -63,17 +70,41 @@ func progressMsg(options *options_type, msg string) {
 	lastMsgTime = now
 }
 
+const (
+	ffUnknown = iota
+	ffPNG     = iota
+	ffJPEG    = iota
+)
+
+func getFileFormatByFilename(fn string) int {
+	ext := strings.ToLower(path.Ext(fn))
+	switch ext {
+	case ".png":
+		return ffPNG
+	case ".jpg", ".jpeg":
+		return ffJPEG
+	}
+	return ffUnknown
+}
+
 func resizeMain(options *options_type) error {
 	var err error
 	var srcBounds image.Rectangle
 	var resizedImage *fpresize.FPImage
+	var nrgbaResizedImage *image.NRGBA
 	var srcImg image.Image
 	var srcW, srcH, dstW, dstH int
+	var outputFileFormat int
 
 	// Allow more than one thread to be used by this process, if more than one CPU exists.
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	dstH = options.height
+
+	outputFileFormat = getFileFormatByFilename(options.dstFilename)
+	if outputFileFormat == ffUnknown {
+		return errors.New("Can't determine output file format. Please name the output file to end in .png or .jpg")
+	}
 
 	progressMsg(options, "Reading source file")
 	srcImg, err = readImageFromFile(options.srcFilename)
@@ -160,11 +191,17 @@ func resizeMain(options *options_type) error {
 	// - It's probably faster, because CopyToNRGBA knows about resizedImage's
 	//   internal format, while png.Encode has to use the public accessor
 	//   methods.
-	progressMsg(options, "Converting to NRGBA format")
-	nrgbaResizedImage := resizedImage.CopyToNRGBA()
+	if outputFileFormat == ffPNG {
+		progressMsg(options, "Converting to NRGBA format")
+		nrgbaResizedImage = resizedImage.CopyToNRGBA()
+	}
 
 	progressMsg(options, "Writing target file")
-	err = writeImageToFile(nrgbaResizedImage, options.dstFilename)
+	if nrgbaResizedImage != nil {
+		err = writeImageToFile(nrgbaResizedImage, options.dstFilename, outputFileFormat)
+	} else {
+		err = writeImageToFile(resizedImage, options.dstFilename, outputFileFormat)
+	}
 	if err != nil {
 		return err
 	}
@@ -190,7 +227,7 @@ func main() {
 	// Replace the standard flag.Usage function
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  fpr [options] <source-file> <target.png>\n")
+		fmt.Fprintf(os.Stderr, "  fpr [options] <source-file> <target-file>\n")
 		flag.PrintDefaults()
 	}
 
