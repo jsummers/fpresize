@@ -33,8 +33,8 @@ type FPObject struct {
 	outputCCFFlags uint32
 
 	inputCCLookupTable16 *[65536]float32 // color conversion cache
-	outputCCLookupTable  []float32
-	outputCCTableSize    int
+	outputCCLookupTable8 []uint8
+	outputCCTable8Size   int
 
 	progressCallback func(msg string)
 
@@ -543,7 +543,7 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 	return dstFPImage, nil
 }
 
-// Resize performs the resize, and returns a pointer to an image that
+// ResizeNRGBA performs the resize, and returns a pointer to an image that
 // uses the NRGBA format.
 func (fp *FPObject) ResizeToNRGBA() (*image.NRGBA, error) {
 
@@ -552,7 +552,21 @@ func (fp *FPObject) ResizeToNRGBA() (*image.NRGBA, error) {
 		return nil, err
 	}
 
-	fp.convertDstFPImage(dstFPImage)
-	nrgba := dstFPImage.copyToNRGBA()
+	nrgba := fp.convertDstFPImageToNRGBA(dstFPImage)
 	return nrgba, nil
+}
+
+// ResizeNRGBA performs the resize, and returns a pointer to an image that
+// uses the NRGBA64 format.
+func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
+
+	dstFPImage, err := fp.resizeMain()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: Optimize this
+	fp.convertDstFPImage(dstFPImage)
+	nrgba64 := dstFPImage.copyToNRGBA64()
+	return nrgba64, nil
 }

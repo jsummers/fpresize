@@ -38,7 +38,9 @@ func (fp *FPObject) makeInputCCLookupTable() {
 	fp.inputCCF(fp.inputCCLookupTable16[:])
 }
 
-func (fp *FPObject) makeOutputCCLookupTable() {
+func (fp *FPObject) makeOutputCCLookupTable8(tableSize int) {
+	var i int
+
 	if fp.inputCCF == nil {
 		return
 	}
@@ -54,14 +56,19 @@ func (fp *FPObject) makeOutputCCLookupTable() {
 
 	fp.progressMsgf("Creating output color correction lookup table")
 
-	// TODO: This size needs to vary depending on how much precision we need.
-	fp.outputCCTableSize = 10000
+	fp.outputCCTable8Size = tableSize
 
-	fp.outputCCLookupTable = make([]float32,fp.outputCCTableSize)
-	for i := 0; i < fp.outputCCTableSize; i++ {
-		fp.outputCCLookupTable[i] = float32(i) / float32(fp.outputCCTableSize)
+	var tempTable = make([]float32, fp.outputCCTable8Size)
+
+	for i = 0; i < fp.outputCCTable8Size; i++ {
+		tempTable[i] = float32(i) / float32(fp.outputCCTable8Size)
 	}
-	fp.outputCCF(fp.outputCCLookupTable)
+	fp.outputCCF(tempTable)
+
+	fp.outputCCLookupTable8 = make([]uint8, fp.outputCCTable8Size)
+	for i = 0; i < fp.outputCCTable8Size; i++ {
+		fp.outputCCLookupTable8[i] = uint8(tempTable[i]*255.0 + 0.5)
+	}
 }
 
 // Copies(&converts) from fp.srcImg to the given image.
@@ -96,10 +103,10 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 		for i = 0; i < fp.srcW; i++ {
 			// Read a pixel from the source image, into uint16 samples
 			if src_as_RGBA != nil {
-				r = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i])*257
-				g = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i+1])*257
-				b = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i+2])*257
-				a = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j + 4*i+3])*257
+				r = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i]) * 257
+				g = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i+1]) * 257
+				b = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i+2]) * 257
+				a = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i+3]) * 257
 			} else {
 				srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
 				r, g, b, a = srcclr.RGBA()
@@ -178,8 +185,6 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 func (fp *FPObject) convertDstFPImage(im *FPImage) {
 	var i, j, k int
 
-	// fp.makeOutputCCLookupTable()
-
 	fp.progressMsgf("Converting to target colorspace")
 
 	for j = 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
@@ -189,6 +194,7 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 			sam := im.Pix[j*im.Stride+i*4 : j*im.Stride+i*4+4]
 
 			if !fp.hasTransparency {
+				// Fixup the alpha sample, in case we didn't compute it
 				sam[3] = 1.0
 			} else {
 				if sam[3] <= 0.0 { // Fully transparent
@@ -216,21 +222,80 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 			}
 			// Convert from linear color
 			if fp.outputCCF != nil {
-				if fp.outputCCLookupTable != nil {
-					sam[0] = fp.outputCCLookupTable[int(sam[0]*float32(fp.outputCCTableSize-1)+0.5)]
-					sam[1] = fp.outputCCLookupTable[int(sam[1]*float32(fp.outputCCTableSize-1)+0.5)]
-					sam[2] = fp.outputCCLookupTable[int(sam[2]*float32(fp.outputCCTableSize-1)+0.5)]
-				} else {
-					fp.outputCCF(sam[0:3])
-				}
+				fp.outputCCF(sam[0:3])
 			}
 		}
 	}
 }
 
-// CopyToNRGBA is a utility function, useful when writing PNG images,
-// to avoid having to convert to associated alpha and then back to
-// unassociated alpha.
+// im1 is floating point, linear colorspace, associated alpha
+// im2 will be uint8, target colorspace, unassociated alpha
+// It's okay to modify im1's pixels; it's about to be thrown away.
+func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
+	var i, j, k int
+
+	im2 := image.NewNRGBA(im1.Bounds())
+
+	// TODO: Figure out a suitable size for the lookup table.
+	fp.makeOutputCCLookupTable8(10000)
+
+	fp.progressMsgf("Converting to target colorspace, and NRGBA format")
+
+	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
+		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
+			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
+			sam2 := im2.Pix[j*im2.Stride+i*4 : j*im2.Stride+i*4+4]
+
+			if !fp.hasTransparency {
+				sam1[3] = 1.0
+			} else {
+				if sam1[3] <= 0.0 { // Fully transparent
+					sam2[0] = 0
+					sam2[1] = 0
+					sam2[2] = 0
+					sam2[3] = 0
+					continue
+				}
+				if sam1[3] > 1.0 {
+					sam1[3] = 1.0
+				}
+			}
+			// Clamp to [0,1], and convert to unassociated alpha
+			for k = 0; k < 3; k++ {
+				if fp.hasTransparency {
+					sam1[k] /= sam1[3]
+				}
+				if sam1[k] < 0.0 {
+					sam1[k] = 0.0
+				}
+				if sam1[k] > 1.0 {
+					sam1[k] = 1.0
+				}
+			}
+
+			// Convert from linear color, if needed
+			sam2[3] = uint8(sam1[3]*255.0 + 0.5)
+
+			if fp.outputCCF != nil {
+				if fp.outputCCLookupTable8 != nil {
+					for k = 0; k < 3; k++ {
+						sam2[k] = fp.outputCCLookupTable8[int(sam1[k]*float32(fp.outputCCTable8Size-1)+0.5)]
+					}
+					continue
+				} else {
+					fp.outputCCF(sam1[0:3])
+				}
+			}
+			for k = 0; k < 3; k++ {
+				sam2[k] = uint8(sam1[k]*255.0 + 0.5)
+			}
+		}
+	}
+
+	return im2
+}
+
+// TODO: Remove this function
 func (fpi *FPImage) copyToNRGBA() *image.NRGBA {
 	dst := image.NewNRGBA(fpi.Bounds())
 	for j := 0; j < (fpi.Rect.Max.Y - fpi.Rect.Min.Y); j++ {
