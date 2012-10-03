@@ -175,60 +175,36 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 
 // Convert from:
 //  * linear colorspace
-//  * associated alpha
-//  * alpha samples may be meaningless if image is opaque
+//  * unassociated alpha
 // to:
 //  * target colorspace
-//  * associated alpha
-//  * samples clamped to [0,1]
-//  * alpha samples always valid
+//  * unassociated alpha
 func (fp *FPObject) convertDstFPImage(im *FPImage) {
-	var i, j, k int
+	var i, j int
+
+	if fp.outputCCF == nil {
+		return
+	}
 
 	fp.progressMsgf("Converting to target colorspace")
 
 	for j = 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
 		for i = 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
-
 			// Identify the slice of samples representing the pixel we're updating.
 			sam := im.Pix[j*im.Stride+i*4 : j*im.Stride+i*4+4]
 
-			if !fp.hasTransparency {
-				// Fixup the alpha sample, in case we didn't compute it
-				sam[3] = 1.0
-			} else {
-				if sam[3] <= 0.0 { // Fully transparent
-					sam[0] = 0.0
-					sam[1] = 0.0
-					sam[2] = 0.0
-					sam[3] = 0.0
-					continue
-				}
-				if sam[3] > 1.0 {
-					sam[3] = 1.0
-				}
+			if sam[3] <= 0.0 {
+				// A fully transparent pixel (nothing to do)
+				continue
 			}
-			// Clamp to [0,1], and convert to unassociated alpha
-			for k = 0; k < 3; k++ {
-				if fp.hasTransparency {
-					sam[k] /= sam[3]
-				}
-				if sam[k] < 0.0 {
-					sam[k] = 0.0
-				}
-				if sam[k] > 1.0 {
-					sam[k] = 1.0
-				}
-			}
-			// Convert from linear color
-			if fp.outputCCF != nil {
-				fp.outputCCF(sam[0:3])
-			}
+
+			// Convert to target colorspace
+			fp.outputCCF(sam[0:3])
 		}
 	}
 }
 
-// im1 is floating point, linear colorspace, associated alpha
+// im1 is floating point, linear colorspace, unassociated alpha
 // im2 will be uint8, target colorspace, unassociated alpha
 // It's okay to modify im1's pixels; it's about to be thrown away.
 func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
@@ -239,53 +215,39 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 	// TODO: Figure out a suitable size for the lookup table.
 	fp.makeOutputCCLookupTable8(10000)
 
-	fp.progressMsgf("Converting to target colorspace, and NRGBA format")
+	if fp.outputCCF == nil {
+		fp.progressMsgf("Converting to NRGBA format")
+	} else {
+		fp.progressMsgf("Converting to target colorspace, and NRGBA format")
+	}
 
 	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
 		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
 			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
 			sam2 := im2.Pix[j*im2.Stride+i*4 : j*im2.Stride+i*4+4]
 
+			// Set the alpha sample
 			if !fp.hasTransparency {
-				sam1[3] = 1.0
+				sam2[3] = 255
 			} else {
-				if sam1[3] <= 0.0 { // Fully transparent
-					sam2[0] = 0
-					sam2[1] = 0
-					sam2[2] = 0
-					sam2[3] = 0
-					continue
-				}
-				if sam1[3] > 1.0 {
-					sam1[3] = 1.0
-				}
-			}
-			// Clamp to [0,1], and convert to unassociated alpha
-			for k = 0; k < 3; k++ {
-				if fp.hasTransparency {
-					sam1[k] /= sam1[3]
-				}
-				if sam1[k] < 0.0 {
-					sam1[k] = 0.0
-				}
-				if sam1[k] > 1.0 {
-					sam1[k] = 1.0
-				}
+				sam2[3] = uint8(sam1[3]*255.0 + 0.5)
 			}
 
-			// Convert from linear color, if needed
-			sam2[3] = uint8(sam1[3]*255.0 + 0.5)
-
+			// Do colorspace conversion if needed.
 			if fp.outputCCF != nil {
 				if fp.outputCCLookupTable8 != nil {
+					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
 						sam2[k] = fp.outputCCLookupTable8[int(sam1[k]*float32(fp.outputCCTable8Size-1)+0.5)]
 					}
 					continue
 				} else {
+					// Do colorspace conversion the slow way.
 					fp.outputCCF(sam1[0:3])
 				}
 			}
+
+			// Set the non-alpha samples.
 			for k = 0; k < 3; k++ {
 				sam2[k] = uint8(sam1[k]*255.0 + 0.5)
 			}
@@ -293,17 +255,6 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 	}
 
 	return im2
-}
-
-// TODO: Remove this function
-func (fpi *FPImage) copyToNRGBA() *image.NRGBA {
-	dst := image.NewNRGBA(fpi.Bounds())
-	for j := 0; j < (fpi.Rect.Max.Y - fpi.Rect.Min.Y); j++ {
-		for i := 0; i < (fpi.Rect.Max.X-fpi.Rect.Min.X)*4; i++ {
-			dst.Pix[j*dst.Stride+i] = uint8(fpi.Pix[j*fpi.Stride+i]*255.0 + 0.5)
-		}
-	}
-	return dst
 }
 
 func (fpi *FPImage) copyToNRGBA64() *image.NRGBA64 {
