@@ -54,6 +54,7 @@ func writeImageToFile(img image.Image, dstFilename string, outputFileFormat int)
 	return err
 }
 
+var startTime time.Time
 var lastMsgTime time.Time
 
 func progressMsg(options *options_type, msg string) {
@@ -90,11 +91,13 @@ func getFileFormatByFilename(fn string) int {
 func resizeMain(options *options_type) error {
 	var err error
 	var srcBounds image.Rectangle
-	var resizedImage *fpresize.FPImage
+	var rgbaResizedImage *image.RGBA
 	var nrgbaResizedImage *image.NRGBA
 	var srcImg image.Image
 	var srcW, srcH, dstW, dstH int
 	var outputFileFormat int
+
+	startTime := time.Now()
 
 	// Allow more than one thread to be used by this process, if more than one CPU exists.
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -178,7 +181,7 @@ func resizeMain(options *options_type) error {
 	if outputFileFormat == ffPNG {
 		nrgbaResizedImage, err = fp.ResizeToNRGBA()
 	} else {
-		resizedImage, err = fp.Resize()
+		rgbaResizedImage, err = fp.ResizeToRGBA()
 	}
 	if err != nil {
 		return err
@@ -188,12 +191,17 @@ func resizeMain(options *options_type) error {
 	if nrgbaResizedImage != nil {
 		err = writeImageToFile(nrgbaResizedImage, options.dstFilename, outputFileFormat)
 	} else {
-		err = writeImageToFile(resizedImage, options.dstFilename, outputFileFormat)
+		err = writeImageToFile(rgbaResizedImage, options.dstFilename, outputFileFormat)
 	}
 	if err != nil {
 		return err
 	}
-	progressMsg(options, "Done")
+
+	if options.debug {
+		fmt.Printf("Done. Total time: %v\n", time.Now().Sub(startTime))
+	} else {
+		progressMsg(options, "Done")
+	}
 
 	return nil
 }

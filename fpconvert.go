@@ -38,7 +38,7 @@ func (fp *FPObject) makeInputCCLookupTable() {
 	fp.inputCCF(fp.inputCCLookupTable16[:])
 }
 
-func (fp *FPObject) makeOutputCCLookupTable8(tableSize int) {
+func (fp *FPObject) makeoutputCCTableX_8(tableSize int) {
 	var i int
 
 	if fp.inputCCF == nil {
@@ -56,18 +56,18 @@ func (fp *FPObject) makeOutputCCLookupTable8(tableSize int) {
 
 	fp.progressMsgf("Creating output color correction lookup table")
 
-	fp.outputCCTable8Size = tableSize
+	fp.outputCCTableX_8Size = tableSize
 
-	var tempTable = make([]float32, fp.outputCCTable8Size)
+	var tempTable = make([]float32, fp.outputCCTableX_8Size)
 
-	for i = 0; i < fp.outputCCTable8Size; i++ {
-		tempTable[i] = float32(i) / float32(fp.outputCCTable8Size)
+	for i = 0; i < fp.outputCCTableX_8Size; i++ {
+		tempTable[i] = float32(i) / float32(fp.outputCCTableX_8Size)
 	}
 	fp.outputCCF(tempTable)
 
-	fp.outputCCLookupTable8 = make([]uint8, fp.outputCCTable8Size)
-	for i = 0; i < fp.outputCCTable8Size; i++ {
-		fp.outputCCLookupTable8[i] = uint8(tempTable[i]*255.0 + 0.5)
+	fp.outputCCTableX_8 = make([]uint8, fp.outputCCTableX_8Size)
+	for i = 0; i < fp.outputCCTableX_8Size; i++ {
+		fp.outputCCTableX_8[i] = uint8(tempTable[i]*255.0 + 0.5)
 	}
 }
 
@@ -213,7 +213,7 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 	im2 := image.NewNRGBA(im1.Bounds())
 
 	// TODO: Figure out a suitable size for the lookup table.
-	fp.makeOutputCCLookupTable8(10000)
+	fp.makeoutputCCTableX_8(10000)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to NRGBA format")
@@ -235,10 +235,10 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 
 			// Do colorspace conversion if needed.
 			if fp.outputCCF != nil {
-				if fp.outputCCLookupTable8 != nil {
+				if fp.outputCCTableX_8 != nil {
 					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
-						sam2[k] = fp.outputCCLookupTable8[int(sam1[k]*float32(fp.outputCCTable8Size-1)+0.5)]
+						sam2[k] = fp.outputCCTableX_8[int(sam1[k]*float32(fp.outputCCTableX_8Size-1)+0.5)]
 					}
 					continue
 				} else {
@@ -250,6 +250,56 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 			// Set the non-alpha samples.
 			for k = 0; k < 3; k++ {
 				sam2[k] = uint8(sam1[k]*255.0 + 0.5)
+			}
+		}
+	}
+
+	return im2
+}
+
+func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
+	var i, j, k int
+
+	im2 := image.NewRGBA(im1.Bounds())
+
+	// Because we still need to convert to associated alpha after doing color conversion,
+	// the lookup table should return high-precision numbers - uint8 is not enough.
+	// fp.makeoutputCCTableX_32(10000)
+
+	if fp.outputCCF == nil {
+		fp.progressMsgf("Converting to NRGBA format")
+	} else {
+		fp.progressMsgf("Converting to target colorspace, and NRGBA format")
+	}
+
+	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
+		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
+			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
+			sam2 := im2.Pix[j*im2.Stride+i*4 : j*im2.Stride+i*4+4]
+
+			// Set the alpha sample
+			if !fp.hasTransparency {
+				sam2[3] = 255
+			} else {
+				sam2[3] = uint8(sam1[3]*255.0 + 0.5)
+			}
+
+			// Do colorspace conversion if needed.
+			if fp.outputCCF != nil {
+				if fp.outputCCTableX_32 != nil {
+					// Do colorspace conversion using a lookup table.
+					for k = 0; k < 3; k++ {
+						sam1[k] = fp.outputCCTableX_32[int(sam1[k]*float32(fp.outputCCTableX_32Size-1)+0.5)]
+					}
+				} else {
+					// Do colorspace conversion the slow way.
+					fp.outputCCF(sam1[0:3])
+				}
+			}
+
+			// Set the non-alpha samples (converting to associated alpha)
+			for k = 0; k < 3; k++ {
+				sam2[k] = uint8((sam1[k]*sam1[3])*255.0 + 0.5)
 			}
 		}
 	}
