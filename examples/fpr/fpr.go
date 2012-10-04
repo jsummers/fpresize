@@ -9,7 +9,7 @@ import "fmt"
 import "os"
 import "time"
 import "flag"
-import "path"
+import "path/filepath"
 import "strings"
 import "errors"
 import "runtime"
@@ -78,7 +78,7 @@ const (
 )
 
 func getFileFormatByFilename(fn string) int {
-	ext := strings.ToLower(path.Ext(fn))
+	ext := strings.ToLower(filepath.Ext(fn))
 	switch ext {
 	case ".png":
 		return ffPNG
