@@ -635,9 +635,7 @@ func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
 		return nil, err
 	}
 
-	// TODO: Optimize this
-	fp.convertDstFPImage(dstFPImage)
-	nrgba64 := dstFPImage.copyToNRGBA64()
+	nrgba64 := fp.convertDstFPImageToNRGBA64(dstFPImage)
 	return nrgba64, nil
 }
 

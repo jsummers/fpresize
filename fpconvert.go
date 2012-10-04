@@ -265,7 +265,7 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 			}
 
 			// Do colorspace conversion if needed.
-			if fp.outputCCF != nil {
+			if fp.outputCCF != nil && sam2[3] > 0 {
 				if fp.outputCCTableX_8 != nil {
 					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
@@ -316,7 +316,7 @@ func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
 			}
 
 			// Do colorspace conversion if needed.
-			if fp.outputCCF != nil {
+			if fp.outputCCF != nil && sam2[3] > 0 {
 				if fp.outputCCTableX_32 != nil {
 					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
@@ -338,15 +338,47 @@ func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
 	return im2
 }
 
-func (fpi *FPImage) copyToNRGBA64() *image.NRGBA64 {
-	var n uint32
-	dst := image.NewNRGBA64(fpi.Bounds())
-	for j := 0; j < (fpi.Rect.Max.Y - fpi.Rect.Min.Y); j++ {
-		for i := 0; i < (fpi.Rect.Max.X-fpi.Rect.Min.X)*4; i++ {
-			n = uint32(fpi.Pix[j*fpi.Stride+i]*65535.0 + 0.5)
-			dst.Pix[j*dst.Stride+i*2+0] = uint8(n >> 8)
-			dst.Pix[j*dst.Stride+i*2+1] = uint8(n)
+func (fp *FPObject) convertDstFPImageToNRGBA64(im1 *FPImage) *image.NRGBA64 {
+	var i, j, k int
+	var sam2 [4]uint16
+
+	im2 := image.NewNRGBA64(im1.Bounds())
+
+	if fp.outputCCF == nil {
+		fp.progressMsgf("Converting to NRGBA64 format")
+	} else {
+		fp.progressMsgf("Converting to target colorspace, and NRGBA64 format")
+	}
+
+	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
+		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
+			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
+			data2 := im2.Pix[j*im2.Stride+i*8 : j*im2.Stride+i*8+8]
+
+			// Set the alpha sample
+			if !fp.hasTransparency {
+				sam2[3] = 65535
+			} else {
+				sam2[3] = uint16(sam1[3]*65535.0 + 0.5)
+			}
+
+			// Do colorspace conversion if needed.
+			if fp.outputCCF != nil && sam2[3] > 0 {
+				fp.outputCCF(sam1[0:3])
+			}
+
+			// Calculate the non-alpha samples.
+			for k = 0; k < 3; k++ {
+				sam2[k] = uint16(sam1[k]*65535.0 + 0.5)
+			}
+
+			// Convert all samples to NRGBA format
+			for k = 0; k < 4; k++ {
+				data2[k*2] = uint8(sam2[k] >> 8)
+				data2[k*2+1] = uint8(sam2[k] & 0xff)
+			}
 		}
 	}
-	return dst
+
+	return im2
 }
