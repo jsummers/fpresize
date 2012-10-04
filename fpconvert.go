@@ -382,3 +382,50 @@ func (fp *FPObject) convertDstFPImageToNRGBA64(im1 *FPImage) *image.NRGBA64 {
 
 	return im2
 }
+
+// TODO: If we are not going to use lookup tables to speed up color correction,
+// this function and convertDstFPImageToNRGBA64 could be merged.
+func (fp *FPObject) convertDstFPImageToRGBA64(im1 *FPImage) *image.RGBA64 {
+	var i, j, k int
+	var sam2 [4]uint16
+
+	im2 := image.NewRGBA64(im1.Bounds())
+
+	if fp.outputCCF == nil {
+		fp.progressMsgf("Converting to RGBA64 format")
+	} else {
+		fp.progressMsgf("Converting to target colorspace, and RGBA64 format")
+	}
+
+	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
+		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
+			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
+			data2 := im2.Pix[j*im2.Stride+i*8 : j*im2.Stride+i*8+8]
+
+			// Set the alpha sample
+			if !fp.hasTransparency {
+				sam2[3] = 65535
+			} else {
+				sam2[3] = uint16(sam1[3]*65535.0 + 0.5)
+			}
+
+			// Do colorspace conversion if needed.
+			if fp.outputCCF != nil && sam2[3] > 0 {
+				fp.outputCCF(sam1[0:3])
+			}
+
+			// Calculate the non-alpha samples.
+			for k = 0; k < 3; k++ {
+				sam2[k] = uint16((sam1[k]*sam1[3])*65535.0 + 0.5)
+			}
+
+			// Convert all samples to NRGBA format
+			for k = 0; k < 4; k++ {
+				data2[k*2] = uint8(sam2[k] >> 8)
+				data2[k*2+1] = uint8(sam2[k] & 0xff)
+			}
+		}
+	}
+
+	return im2
+}
