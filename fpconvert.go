@@ -38,7 +38,9 @@ func (fp *FPObject) makeInputCCLookupTable() {
 	fp.inputCCF(fp.inputCCLookupTable16[:])
 }
 
-func (fp *FPObject) makeoutputCCTableX_8(tableSize int) {
+// Make a lookup table that takes an int from 0 to tablesize-1,
+// and gives a uint8 (representing a sample from 0 to 255).
+func (fp *FPObject) makeOutputCCTableX_8(tableSize int) {
 	var i int
 
 	if fp.inputCCF == nil {
@@ -61,7 +63,7 @@ func (fp *FPObject) makeoutputCCTableX_8(tableSize int) {
 	var tempTable = make([]float32, fp.outputCCTableX_8Size)
 
 	for i = 0; i < fp.outputCCTableX_8Size; i++ {
-		tempTable[i] = float32(i) / float32(fp.outputCCTableX_8Size)
+		tempTable[i] = float32(i) / float32(fp.outputCCTableX_8Size-1)
 	}
 	fp.outputCCF(tempTable)
 
@@ -69,6 +71,35 @@ func (fp *FPObject) makeoutputCCTableX_8(tableSize int) {
 	for i = 0; i < fp.outputCCTableX_8Size; i++ {
 		fp.outputCCTableX_8[i] = uint8(tempTable[i]*255.0 + 0.5)
 	}
+}
+
+// Make a lookup table that takes an int from 0 to tablesize-1,
+// and gives a float32 (representing a sample from 0.0 to 1.0).
+func (fp *FPObject) makeOutputCCTableX_32(tableSize int) {
+	var i int
+
+	if fp.inputCCF == nil {
+		return
+	}
+	if (fp.outputCCFFlags & CCFFlagNoCache) != 0 {
+		return
+	}
+	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
+		return
+	}
+	if fp.dstW*fp.dstH < 16384 {
+		return
+	}
+
+	fp.progressMsgf("Creating output color correction lookup table")
+
+	fp.outputCCTableX_32Size = tableSize
+
+	fp.outputCCTableX_32 = make([]float32, fp.outputCCTableX_32Size)
+	for i = 0; i < fp.outputCCTableX_32Size; i++ {
+		fp.outputCCTableX_32[i] = float32(i) / float32(fp.outputCCTableX_32Size-1)
+	}
+	fp.outputCCF(fp.outputCCTableX_32)
 }
 
 // Copies(&converts) from fp.srcImg to the given image.
@@ -213,7 +244,7 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 	im2 := image.NewNRGBA(im1.Bounds())
 
 	// TODO: Figure out a suitable size for the lookup table.
-	fp.makeoutputCCTableX_8(10000)
+	fp.makeOutputCCTableX_8(10000)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to NRGBA format")
@@ -263,13 +294,13 @@ func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
 	im2 := image.NewRGBA(im1.Bounds())
 
 	// Because we still need to convert to associated alpha after doing color conversion,
-	// the lookup table should return high-precision numbers - uint8 is not enough.
-	// fp.makeoutputCCTableX_32(10000)
+	// the lookup table should return high-precision numbers -- uint8 is not enough.
+	fp.makeOutputCCTableX_32(10000)
 
 	if fp.outputCCF == nil {
-		fp.progressMsgf("Converting to NRGBA format")
+		fp.progressMsgf("Converting to RGBA format")
 	} else {
-		fp.progressMsgf("Converting to target colorspace, and NRGBA format")
+		fp.progressMsgf("Converting to target colorspace, and RGBA format")
 	}
 
 	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {

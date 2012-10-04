@@ -641,6 +641,8 @@ func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
 	return nrgba64, nil
 }
 
+// ResizeRGBA performs the resize, and returns a pointer to an image that
+// uses the RGBA64 format.
 func (fp *FPObject) ResizeToRGBA() (*image.RGBA, error) {
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {
