@@ -9,11 +9,11 @@ import "image/color"
 // FPImage is a custom image type, which implements the standard image.Image interface.
 // Its internal structure is designed to be similar to Go's standard image structs.
 // 
-// FPImage's pixels normally use unassociated alpha, and are in a nonlinear colorspace
-// (presumably sRGB).
+// FPImage's pixels use unassociated alpha, and are presumably in a gamma-corrected
+// colorspace (usually sRGB).
 type FPImage struct {
-	// A slice containing all samples. 4 consecutive floating point samples (R G B A)
-	// make a pixel.
+	// A slice containing all samples. 4 consecutive floating point samples
+	// (R G B A) make a pixel.
 	Pix    []float32
 	Stride int
 	Rect   image.Rectangle
@@ -65,15 +65,18 @@ func (m *fpModel) Convert(c color.Color) color.Color {
 	return &fpc
 }
 
+// (Method required by the image.Image interface)
 func (fp *FPImage) ColorModel() color.Model {
 	var fpm fpModel
 	return &fpm
 }
 
+// (Method required by the image.Image interface)
 func (fp *FPImage) Bounds() (r image.Rectangle) {
 	return fp.Rect
 }
 
+// (Method required by the image.Image interface)
 func (fpi *FPImage) At(x, y int) color.Color {
 	var fpc fpColor
 	fpc.sam[0] = fpi.Pix[y*fpi.Stride+x*4+0]

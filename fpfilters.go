@@ -8,6 +8,9 @@ package fpresize
 import "math"
 
 // Filter represents a resampling filter.
+//
+// A filter can be created by a Make*Filter function, or you can
+// create a custom filter.
 type Filter struct {
 	// Perhaps we ought to have a more-concrete Filter type in which the
 	// scaleFactor param is removed, and Radius and Flags are numeric variables.
@@ -16,8 +19,8 @@ type Filter struct {
 	// F is the filter function.
 	F func(x float64, scaleFactor float64) float64
 
-	// Radius The largest distance from 0 at which the filter's value is nonzero
-	// (not taking blurring into account).
+	// Radius The largest distance from 0 at which the filter's value is
+	// nonzero (not taking blurring into account).
 	Radius func(scaleFactor float64) float64
 
 	// Flags may affect how fpresize uses the filter. This field can be (and
@@ -27,11 +30,12 @@ type Filter struct {
 
 const (
 	// If FPFlagAsymmetric is set, the filter will be called with negative
-	// arguments.
+	// arguments. Otherwise, your filter can safely assume the argument is
+	// nonnegative.
 	FilterFlagAsymmetric = 0x00000001
 )
 
-// Returns a triangle filter, which can be passed to SetFilter.
+// Returns a triangle filter.
 func MakeTriangleFilter() *Filter {
 	f := new(Filter)
 	f.F = func(x float64, scaleFactor float64) float64 {
@@ -46,6 +50,7 @@ func MakeTriangleFilter() *Filter {
 	return f
 }
 
+// Returns a gaussian filter, evaluated out to 4 standard deviations.
 func MakeGaussianFilter() *Filter {
 	f := new(Filter)
 	f.F = func(x float64, scaleFactor float64) float64 {
@@ -67,7 +72,7 @@ func MakeGaussianFilter() *Filter {
 
 // Returns a cubic filter, based on the B and C parameters as defined by
 // Mitchell/Netravali. Some options are (1./3,1./3) for a Mitchell filter,
-// (0,1/2) for Catmull-Rom, and (0,0) for a Hermite filter.
+// (0,0.5) for Catmull-Rom, and (0,0) for a Hermite filter.
 func MakeCubicFilter(b float64, c float64) *Filter {
 	var radius float64
 	if b == 0 && c == 0 {

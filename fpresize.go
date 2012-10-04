@@ -10,8 +10,8 @@ import "fmt"
 import "errors"
 import "runtime"
 
-// FPObject is an opaque struct that tracks the state of the resize operation.
-// There usually should be one FPObject per source image.
+// FPObject is an opaque struct that tracks the state of the resize process.
+// There is one FPObject per source image.
 type FPObject struct {
 	srcImage   image.Image
 	srcFPImage *FPImage
@@ -413,11 +413,13 @@ func (fp *FPObject) SetSourceImage(srcImg image.Image) {
 	fp.srcH = fp.srcBounds.Max.Y - fp.srcBounds.Min.Y
 }
 
+// SetFilterGetter specifies a function that will return the resampling filter
+// to use. Said function will be called twice per resize: once per dimension.
 func (fp *FPObject) SetFilterGetter(gff FilterGetter) {
 	fp.filterGetter = gff
 }
 
-// SetFilter sets the Filter to use when resizing.
+// SetFilter sets the resampling filter to use when resizing.
 // This should be something returned by a Make*Filter function, or a custom
 // filter.
 // If not called, a reasonable default will be used (currently Lanczos-2).
@@ -425,11 +427,13 @@ func (fp *FPObject) SetFilter(fpf *Filter) {
 	fp.SetFilterGetter(func(isVertical bool) *Filter { return fpf })
 }
 
+// SetBlurGetter specifies a function that will return the blur setting to
+// use. Said function will be called twice per resize: once per dimension.
 func (fp *FPObject) SetBlurGetter(gbf BlurGetter) {
 	fp.blurGetter = gbf
 }
 
-// SetBlur changes the amount of blurring done when resizing.
+// SetBlur sets the amount of blurring done when resizing.
 // The default is 1.0. Larger values blur more.
 func (fp *FPObject) SetBlur(blur float64) {
 	fp.blurGetter = func(isVertical bool) float64 {
@@ -437,8 +441,8 @@ func (fp *FPObject) SetBlur(blur float64) {
 	}
 }
 
-// Returns the current scale factor (target size divided by source size)
-// for the given dimension.
+// ScaleFactor returns the current scale factor (target size divided by
+// source size) for the given dimension.
 // This is only valid during or after Resize() -- it's meant to be used by
 // callback functions, so that the filter to use could be selected based on
 // this information.
@@ -449,8 +453,8 @@ func (fp *FPObject) ScaleFactor(isVertical bool) float64 {
 	return float64(fp.dstW) / float64(fp.srcW)
 }
 
-// Returns true if the source image has any pixels that are not fully opaque,
-// or transparency is otherwise needed to process the image.
+// HasTransparency returns true if the source image has any pixels that are
+// not fully opaque, or transparency is otherwise needed to process the image.
 // This is only valid during or after Resize() -- it's meant to be used by
 // callback functions, so that the filter to use could be selected based on
 // this information.
@@ -458,7 +462,7 @@ func (fp *FPObject) HasTransparency() bool {
 	return fp.hasTransparency
 }
 
-// The standard input ColorConverter.
+// SRGBToLinear is the default input ColorConverter.
 func SRGBToLinear(s []float32) {
 	for k := range s {
 		if s[k] <= 0.0404482362771082 {
@@ -469,7 +473,7 @@ func SRGBToLinear(s []float32) {
 	}
 }
 
-// The standard output ColorConverter.
+// LinearTosRGB is the default output ColorConverter.
 func LinearTosRGB(s []float32) {
 	for k := range s {
 		if s[k] <= 0.00313066844250063 {
@@ -598,11 +602,13 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 	return dstFPImage, nil
 }
 
-// Resize performs the resize, and returns a pointer to an image that
+// Resize resizes the image, and returns a pointer to an image that
 // uses the custom FPImage type.
 //
-// This function will be deprecated or removed, in favor of specific functions
-// like ResizeToNRGBA.
+// This function returns a high-precision image that satisfies the image.Image
+// interface, but it may be slow.
+// You should almost always use ResizeToNRGBA, ResizeToRGBA, ResizeToNRGBA64,
+// or ResizeToRGBA64 instead.
 func (fp *FPObject) Resize() (*FPImage, error) {
 
 	dstFPImage, err := fp.resizeMain()
@@ -614,8 +620,11 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 	return dstFPImage, nil
 }
 
-// ResizeNRGBA performs the resize, and returns a pointer to an image that
+// ResizeNRGBA resizes the image, and returns a pointer to an image that
 // uses the NRGBA format.
+//
+// Use this if you intend to write the image to an 8-bits-per-sample PNG
+// file.
 func (fp *FPObject) ResizeToNRGBA() (*image.NRGBA, error) {
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {
@@ -626,8 +635,25 @@ func (fp *FPObject) ResizeToNRGBA() (*image.NRGBA, error) {
 	return nrgba, nil
 }
 
-// ResizeNRGBA performs the resize, and returns a pointer to an image that
+// ResizeRGBA resizes the image, and returns a pointer to an image that
+// uses the RGBA format.
+//
+// Use this if you intend to write the image to a JPEG file.
+func (fp *FPObject) ResizeToRGBA() (*image.RGBA, error) {
+	dstFPImage, err := fp.resizeMain()
+	if err != nil {
+		return nil, err
+	}
+
+	rgba := fp.convertDstFPImageToRGBA(dstFPImage)
+	return rgba, nil
+}
+
+// ResizeNRGBA resizes the image, and returns a pointer to an image that
 // uses the NRGBA64 format.
+//
+// Use this if you intend to write the image to an 16-bits-per-sample PNG
+// file.
 func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
 
 	dstFPImage, err := fp.resizeMain()
@@ -639,20 +665,12 @@ func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
 	return nrgba64, nil
 }
 
-// ResizeRGBA performs the resize, and returns a pointer to an image that
+// ResizeRGBA64 resizes the image, and returns a pointer to an image that
 // uses the RGBA64 format.
-func (fp *FPObject) ResizeToRGBA() (*image.RGBA, error) {
-	dstFPImage, err := fp.resizeMain()
-	if err != nil {
-		return nil, err
-	}
-
-	rgba := fp.convertDstFPImageToRGBA(dstFPImage)
-	return rgba, nil
-}
-
-// ResizeRGBA performs the resize, and returns a pointer to an image that
-// uses the RGBA64 format.
+//
+// This is essentially the native format of Go's "image" package, so this
+// may be the function to use if you are going to further process the image
+// before writing it to a file.
 func (fp *FPObject) ResizeToRGBA64() (*image.RGBA64, error) {
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {

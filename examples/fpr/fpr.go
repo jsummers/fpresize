@@ -130,7 +130,7 @@ func resizeMain(options *options_type) error {
 	if options.filterName == "auto" {
 	} else if options.filterName == "lanczos2" {
 		fp.SetFilter(fpresize.MakeLanczosFilter(2))
-	} else if options.filterName == "lanczos3" {
+	} else if options.filterName == "lanczos3" || options.filterName == "lanczos" {
 		fp.SetFilter(fpresize.MakeLanczosFilter(3))
 	} else if options.filterName == "mix" {
 		fp.SetFilter(fpresize.MakePixelMixingFilter())
@@ -223,7 +223,7 @@ func main() {
 	// Replace the standard flag.Usage function
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  fpr [options] <source-file> <target-file>\n")
+		fmt.Fprintf(os.Stderr, "  fpr -h <height> [options] <source-file> <target-file>\n")
 		flag.PrintDefaults()
 	}
 
