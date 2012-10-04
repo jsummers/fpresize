@@ -16,11 +16,13 @@ type Filter struct {
 	// scaleFactor param is removed, and Radius and Flags are numeric variables.
 	// But I've had trouble making that work in an elegant way.
 
-	// F is the filter function.
+	// F is the filter function. By default, it is assumed to be symmetric
+	// about the line x=0, and will not be called with negative x.
 	F func(x float64, scaleFactor float64) float64
 
-	// Radius The largest distance from 0 at which the filter's value is
-	// nonzero (not taking blurring into account).
+	// Radius returns the largest distance from 0 at which the filter's value
+	// is nonzero (not taking blurring into account). The filter must still
+	// return the correct value (0) for arguments larger than the radius.
 	Radius func(scaleFactor float64) float64
 
 	// Flags may affect how fpresize uses the filter. This field can be (and
@@ -29,9 +31,8 @@ type Filter struct {
 }
 
 const (
-	// If FPFlagAsymmetric is set, the filter will be called with negative
-	// arguments. Otherwise, your filter can safely assume the argument is
-	// nonnegative.
+	// If FPFlagAsymmetric is set, the filter is not assumed to be symmetric,
+	// and it must handle negative arguments.
 	FilterFlagAsymmetric = 0x00000001
 )
 

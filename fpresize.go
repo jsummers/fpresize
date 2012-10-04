@@ -1,8 +1,10 @@
 // ◄◄◄ fpresize.go ►►►
 // Copyright © 2012 Jason Summers
 
-// fpresize performs high-quality resizing of raster images.
 package fpresize
+
+// This is the main file of the fpresize library.
+// It implements the resize algorithm, and most of the API.
 
 import "image"
 import "math"
@@ -59,9 +61,10 @@ const (
 	CCFFlagWholePixels = 0x00000002
 )
 
-// A FilterGetter is a function that returns a Filter. The Filter
-// returned can depend on which dimension is being resized, and
-// other things.
+// A FilterGetter is a function that returns a Filter. The isVertical
+// parameter indicates the dimension for which the filter will be used.
+// The filter could depend on other things as well; for example, the
+// FilterGetter could call ScaleFactor().
 type FilterGetter func(isVertical bool) *Filter
 
 // A BlurGetter is a function that returns a 'blur' setting.
