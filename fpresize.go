@@ -34,11 +34,18 @@ type FPObject struct {
 	outputCCF      ColorConverter
 	outputCCFFlags uint32
 
+	virtualPixels int // A virtPix* constant
+
 	progressCallback func(msg string)
 
 	numWorkers int // Number of worker goroutines we will use
 	maxWorkers int // Max number requested by caller. 0 = not set.
 }
+
+const (
+	VirtualPixelsNone        = 0
+	VirtualPixelsTransparent = 1
+)
 
 // A ColorConverter is passed a slice of samples. It converts them all to
 // a new colorspace, in-place.
@@ -134,6 +141,7 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 	var v_count int
 	var srcSamIdx int
 	var arg float64
+	var isVirtual bool
 	var i int
 
 	for dstSamIdx = 0; dstSamIdx < dstN; dstSamIdx++ {
@@ -151,8 +159,13 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 
 		// Iterate through the input samples that affect this output sample
 		for srcSamIdx = firstSrcSamIdx; srcSamIdx <= lastSrcSamIdx; srcSamIdx++ {
-			if srcSamIdx < 0 || srcSamIdx >= srcN {
-				continue
+			if srcSamIdx >= 0 && srcSamIdx < srcN {
+				isVirtual = false
+			} else {
+				if fp.virtualPixels == VirtualPixelsNone {
+					continue
+				}
+				isVirtual = true
 			}
 
 			arg = (float64(srcSamIdx) - posInSrc) / reductionFactor
@@ -165,8 +178,13 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 			v_count++
 
 			// Add this weight to the list (it will be normalized later)
-			weightList[weightsUsed].srcSamIdx = srcSamIdx
-			weightList[weightsUsed].dstSamIdx = dstSamIdx
+			if isVirtual {
+				weightList[weightsUsed].srcSamIdx = -1
+				weightList[weightsUsed].dstSamIdx = -1
+			} else {
+				weightList[weightsUsed].srcSamIdx = srcSamIdx
+				weightList[weightsUsed].dstSamIdx = dstSamIdx
+			}
 			weightList[weightsUsed].weight = float32(v)
 			weightsUsed++
 		}
@@ -217,10 +235,11 @@ func resampleWorker(workQueue chan resampleWorkItem) {
 
 		// resample1d(&wi)
 		for i := range wi.weightList {
-			// This is the line of code that actually does the resampling. (But All the
-			// interesting things were precalculated in createWeightList().)
-			wi.dstSam[wi.weightList[i].dstSamIdx*wi.dstStride] += wi.srcSam[wi.weightList[i].srcSamIdx*
-				wi.srcStride] * wi.weightList[i].weight
+			if wi.weightList[i].srcSamIdx >= 0 {
+				// Not a (transparent) virtual pixel
+				wi.dstSam[wi.weightList[i].dstSamIdx*wi.dstStride] += wi.srcSam[wi.weightList[i].srcSamIdx*
+					wi.srcStride] * wi.weightList[i].weight
+			}
 		}
 	}
 }
@@ -520,6 +539,13 @@ func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 	fp.dstBounds = dstBounds
 	fp.dstW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
 	fp.dstH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
+	fp.virtualPixels = VirtualPixelsNone
+}
+
+// Change how the edges of the image are handled.
+// This can only be called after setting the target bounds.
+func (fp *FPObject) SetVirtualPixels(n int) {
+	fp.virtualPixels = n
 }
 
 func (fp *FPObject) SetProgressCallback(fn func(msg string)) {
@@ -569,6 +595,12 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 		err = fp.copySrcToFPImage(fp.srcFPImage)
 		if err != nil {
 			return nil, err
+		}
+
+		// If we're using transparent virtual pixels, force processing of
+		// the alpha channel.
+		if fp.virtualPixels == VirtualPixelsTransparent {
+			fp.hasTransparency = true
 		}
 	}
 
