@@ -242,8 +242,13 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 
 	im2 := image.NewNRGBA(im1.Bounds())
 
-	// TODO: Figure out a suitable size for the lookup table.
-	outputCCTableX_8Size := 10000
+	// This table size is optimized for sRGB. The sRGB curve's slope for
+	// the darkest colors (the ones we're most concerned about) is 12.92,
+	// so our table needs to have around 256*12.92 or more entries to ensure
+	// that it includes every possible color value. A size of 255*12.92*3+1 =
+	// 9885 improves precision, and makes the dark colors almost always
+	// round correctly.
+	outputCCTableX_8Size := 9885
 	outputCCTableX_8 := fp.makeOutputCCTableX_8(outputCCTableX_8Size)
 
 	if fp.outputCCF == nil {
@@ -278,7 +283,7 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 				}
 			}
 
-			// Set the non-alpha samples.
+			// Set the non-alpha samples (if we didn't use a lookup table).
 			for k = 0; k < 3; k++ {
 				sam2[k] = uint8(sam1[k]*255.0 + 0.5)
 			}
@@ -295,7 +300,7 @@ func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
 
 	// Because we still need to convert to associated alpha after doing color conversion,
 	// the lookup table should return high-precision numbers -- uint8 is not enough.
-	outputCCTableX_32Size := 10000
+	outputCCTableX_32Size := 9885
 	outputCCTableX_32 := fp.makeOutputCCTableX_32(outputCCTableX_32Size)
 
 	if fp.outputCCF == nil {
