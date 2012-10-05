@@ -23,8 +23,15 @@ type FPObject struct {
 	srcH       int
 	dstCanvasW int
 	dstCanvasH int
-	dstTrueW   float64
-	dstTrueH   float64
+	// How many pixels the left edge of the image is to the right of the left
+	// edge of the canvas.
+	dstOffsetX float64
+	// How many pixels the top edge of the image is below the top
+	// edge of the canvas.
+	dstOffsetY float64
+	// Size of the target rectangle onto which the source image is mapped.
+	dstTrueW float64
+	dstTrueH float64
 
 	hasTransparency bool // Does the source image have transparency?
 
@@ -94,20 +101,31 @@ func fixupFilterArg(filterFlags uint32, x float64) float64 {
 
 // Create and return a weightlist using fp.filter.
 // scrN, dstN = number of samples
-func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight {
+func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
+	var srcN, dstCanvasN int
+	var dstTrueN float64
+	var dstOffset float64
+	if isVertical {
+		srcN, dstCanvasN = fp.srcH, fp.dstCanvasH
+		dstTrueN = fp.dstTrueH
+		dstOffset = fp.dstOffsetY
+	} else {
+		srcN, dstCanvasN = fp.srcW, fp.dstCanvasW
+		dstTrueN = fp.dstTrueW
+		dstOffset = fp.dstOffsetX
+	}
 	var reductionFactor float64
 	var radius float64
 	var weightList []fpWeight
 	var weightsUsed int
 	var weightListCap int
 	var srcN_flt float64 = float64(srcN)
-	var dstN_flt float64 = float64(dstN)
-	var scaleFactor float64 = dstN_flt / srcN_flt
+	var scaleFactor float64 = dstTrueN / srcN_flt
 	var filter *Filter
 	var filterFlags uint32
 
-	if dstN < srcN {
-		reductionFactor = srcN_flt / dstN_flt
+	if dstTrueN < srcN_flt {
+		reductionFactor = srcN_flt / dstTrueN
 	} else {
 		reductionFactor = 1.0
 	}
@@ -132,7 +150,7 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 	// TODO: Review this formula to make sure it's good enough,
 	// and/or dynamically increase the capacity of the weightList
 	// slice on demand.
-	weightListCap = int((1.01+2.0*radius*reductionFactor)*dstN_flt) + 2
+	weightListCap = int((1.01+2.0*radius*reductionFactor)*float64(dstCanvasN)) + 2
 	weightList = make([]fpWeight, weightListCap)
 
 	var dstSamIdx int
@@ -148,9 +166,9 @@ func (fp *FPObject) createWeightList(srcN, dstN int, isVertical bool) []fpWeight
 	var isVirtual bool
 	var i int
 
-	for dstSamIdx = 0; dstSamIdx < dstN; dstSamIdx++ {
+	for dstSamIdx = 0; dstSamIdx < dstCanvasN; dstSamIdx++ {
 		// Figure out the range of source samples that are relevent to this dst sample.
-		posInSrc = ((0.5+float64(dstSamIdx))/dstN_flt)*srcN_flt - 0.5
+		posInSrc = ((0.5+float64(dstSamIdx)-dstOffset)/dstTrueN)*srcN_flt - 0.5
 		firstSrcSamIdx = int(math.Ceil(posInSrc - radius*reductionFactor - 0.0001))
 		lastSrcSamIdx = int(math.Floor(posInSrc + radius*reductionFactor + 0.0001))
 
@@ -237,7 +255,6 @@ func resampleWorker(workQueue chan resampleWorkItem) {
 			return
 		}
 
-		// resample1d(&wi)
 		for i := range wi.weightList {
 			if wi.weightList[i].srcSamIdx >= 0 {
 				// Not a (transparent) virtual pixel
@@ -253,7 +270,6 @@ func resampleWorker(workQueue chan resampleWorkItem) {
 // resizeHeight sets its fields, and makes its origin (0,0).
 func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage) {
 	var nSamples int
-	var srcH int
 	var w int // width of both images
 	var wi resampleWorkItem
 	var i int
@@ -261,7 +277,6 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage) {
 	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstCanvasH)
 
 	w = src.Rect.Max.X - src.Rect.Min.X
-	srcH = src.Rect.Max.Y - src.Rect.Min.Y
 
 	dst.Rect.Min.X = 0
 	dst.Rect.Min.Y = 0
@@ -272,7 +287,7 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage) {
 	nSamples = dst.Stride * fp.dstCanvasH
 	dst.Pix = make([]float32, nSamples)
 
-	wi.weightList = fp.createWeightList(srcH, fp.dstCanvasH, true)
+	wi.weightList = fp.createWeightList(true)
 
 	wi.srcStride = src.Stride
 	wi.dstStride = dst.Stride
@@ -309,14 +324,12 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage) {
 // TODO: Maybe merge resizeWidth & resizeHeight
 func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage) {
 	var nSamples int
-	var srcW int
 	var h int // height of both images
 	var wi resampleWorkItem
 	var i int
 
 	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstCanvasW)
 
-	srcW = src.Rect.Max.X - src.Rect.Min.X
 	h = src.Rect.Max.Y - src.Rect.Min.Y
 
 	dst.Rect.Min.X = 0
@@ -327,7 +340,7 @@ func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage) {
 	nSamples = dst.Stride * h
 	dst.Pix = make([]float32, nSamples)
 
-	wi.weightList = fp.createWeightList(srcW, fp.dstCanvasW, false)
+	wi.weightList = fp.createWeightList(false)
 
 	wi.srcStride = 4
 	wi.dstStride = 4
@@ -538,22 +551,44 @@ func (fp *FPObject) SetOutputColorConverterFlags(flags uint32) {
 	fp.outputCCFFlags = flags
 }
 
-// Set the size and origin of the resized image.
+// SetTargetBounds sets the size and origin of the resized image.
+// The source image will be mapped onto the given bounds.
+// It also sets the VirtualPixels setting to None.
 func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 	fp.dstBounds = dstBounds
 	fp.dstCanvasW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
 	fp.dstCanvasH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
+	fp.dstOffsetX = 0.0
+	fp.dstOffsetY = 0.0
 	fp.dstTrueW = float64(fp.dstCanvasW)
 	fp.dstTrueH = float64(fp.dstCanvasH)
 	fp.virtualPixels = VirtualPixelsNone
 }
 
+// SetTargetBoundsAdvanced sets the bounds of the target image, and
+// the mapping of the source image onto it.
+// It also sets the VirtualPixels setting to Transparent.
+// 
+// dstBounds is the bounds of the target image.
+//
+// x1, y1: The point onto which the upper-left corner of the source
+// image will be mapped. Note that it does not have to be an integer.
+//
+// x2, y2: The point onto which the lower-left corner of the source
+// image will be mapped.
 func (fp *FPObject) SetTargetBoundsAdvanced(dstBounds image.Rectangle,
 	x1, y1, x2, y2 float64) {
-
+	fp.dstBounds = dstBounds
+	fp.dstCanvasW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
+	fp.dstCanvasH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
+	fp.dstOffsetX = x1
+	fp.dstOffsetY = y1
+	fp.dstTrueW = x2 - x1
+	fp.dstTrueH = y2 - y1
+	fp.virtualPixels = VirtualPixelsTransparent
 }
 
-// Change how the edges of the image are handled.
+// SetVirtualPixels controls how the edges of the image are handled.
 // This can only be called after setting the target bounds.
 func (fp *FPObject) SetVirtualPixels(n int) {
 	fp.virtualPixels = n
