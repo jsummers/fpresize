@@ -34,12 +34,6 @@ type FPObject struct {
 	outputCCF      ColorConverter
 	outputCCFFlags uint32
 
-	inputCCLookupTable16  *[65536]float32 // color conversion cache
-	outputCCTableX_8      []uint8
-	outputCCTableX_8Size  int
-	outputCCTableX_32     []float32
-	outputCCTableX_32Size int
-
 	progressCallback func(msg string)
 
 	numWorkers int // Number of worker goroutines we will use

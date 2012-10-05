@@ -12,94 +12,93 @@ import "image"
 import "image/color"
 import "errors"
 
-func (fp *FPObject) makeInputCCLookupTable() {
+func (fp *FPObject) makeInputCCLookupTable() *[65536]float32 {
 	if fp.inputCCF == nil {
-		return
+		return nil
 	}
 	if (fp.inputCCFFlags & CCFFlagNoCache) != 0 {
-		return
+		return nil
 	}
 	if (fp.inputCCFFlags & CCFFlagWholePixels) != 0 {
-		return
+		return nil
 	}
 	if fp.srcW*fp.srcH < 16384 {
 		// Don't bother with a lookup table if the image is very small.
 		// It's hard to estimate what the threshold should be, but accuracy is not
 		// very important here.
-		return
+		return nil
 	}
 
 	fp.progressMsgf("Creating input color correction lookup table")
 
-	fp.inputCCLookupTable16 = new([65536]float32)
+	tbl := new([65536]float32)
 	for i := 0; i < 65536; i++ {
-		fp.inputCCLookupTable16[i] = float32(i) / 65535.0
+		tbl[i] = float32(i) / 65535.0
 	}
-	fp.inputCCF(fp.inputCCLookupTable16[:])
+	fp.inputCCF(tbl[:])
+	return tbl
 }
 
 // Make a lookup table that takes an int from 0 to tablesize-1,
 // and gives a uint8 (representing a sample from 0 to 255).
-func (fp *FPObject) makeOutputCCTableX_8(tableSize int) {
+func (fp *FPObject) makeOutputCCTableX_8(tableSize int) []uint8 {
 	var i int
 
 	if fp.inputCCF == nil {
-		return
+		return nil
 	}
 	if (fp.outputCCFFlags & CCFFlagNoCache) != 0 {
-		return
+		return nil
 	}
 	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
-		return
+		return nil
 	}
 	if fp.dstW*fp.dstH < 16384 {
-		return
+		return nil
 	}
 
 	fp.progressMsgf("Creating output color correction lookup table")
 
-	fp.outputCCTableX_8Size = tableSize
+	var tempTable = make([]float32, tableSize)
 
-	var tempTable = make([]float32, fp.outputCCTableX_8Size)
-
-	for i = 0; i < fp.outputCCTableX_8Size; i++ {
-		tempTable[i] = float32(i) / float32(fp.outputCCTableX_8Size-1)
+	for i = 0; i < tableSize; i++ {
+		tempTable[i] = float32(i) / float32(tableSize-1)
 	}
 	fp.outputCCF(tempTable)
 
-	fp.outputCCTableX_8 = make([]uint8, fp.outputCCTableX_8Size)
-	for i = 0; i < fp.outputCCTableX_8Size; i++ {
-		fp.outputCCTableX_8[i] = uint8(tempTable[i]*255.0 + 0.5)
+	tbl := make([]uint8, tableSize)
+	for i = 0; i < tableSize; i++ {
+		tbl[i] = uint8(tempTable[i]*255.0 + 0.5)
 	}
+	return tbl
 }
 
 // Make a lookup table that takes an int from 0 to tablesize-1,
 // and gives a float32 (representing a sample from 0.0 to 1.0).
-func (fp *FPObject) makeOutputCCTableX_32(tableSize int) {
+func (fp *FPObject) makeOutputCCTableX_32(tableSize int) []float32 {
 	var i int
 
 	if fp.inputCCF == nil {
-		return
+		return nil
 	}
 	if (fp.outputCCFFlags & CCFFlagNoCache) != 0 {
-		return
+		return nil
 	}
 	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
-		return
+		return nil
 	}
 	if fp.dstW*fp.dstH < 16384 {
-		return
+		return nil
 	}
 
 	fp.progressMsgf("Creating output color correction lookup table")
 
-	fp.outputCCTableX_32Size = tableSize
-
-	fp.outputCCTableX_32 = make([]float32, fp.outputCCTableX_32Size)
-	for i = 0; i < fp.outputCCTableX_32Size; i++ {
-		fp.outputCCTableX_32[i] = float32(i) / float32(fp.outputCCTableX_32Size-1)
+	tbl := make([]float32, tableSize)
+	for i = 0; i < tableSize; i++ {
+		tbl[i] = float32(i) / float32(tableSize-1)
 	}
-	fp.outputCCF(fp.outputCCTableX_32)
+	fp.outputCCF(tbl)
+	return tbl
 }
 
 // Copies(&converts) from fp.srcImg to the given image.
@@ -113,7 +112,7 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 		return errors.New("Source image too large to process")
 	}
 
-	fp.makeInputCCLookupTable()
+	inputCCLookupTable16 := fp.makeInputCCLookupTable()
 
 	fp.progressMsgf("Converting to FPImage format")
 
@@ -166,11 +165,11 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 				sam[3] = float32(a) / 65535.0
 			} else if a == 65535 {
 				// Fast path for fully-opaque pixels.
-				if fp.inputCCLookupTable16 != nil {
+				if inputCCLookupTable16 != nil {
 					// Convert to linear color, using a lookup table.
-					sam[0] = fp.inputCCLookupTable16[r]
-					sam[1] = fp.inputCCLookupTable16[g]
-					sam[2] = fp.inputCCLookupTable16[b]
+					sam[0] = inputCCLookupTable16[r]
+					sam[1] = inputCCLookupTable16[g]
+					sam[2] = inputCCLookupTable16[b]
 				} else {
 					// Convert to linear color, without a lookup table.
 					sam[0] = float32(r) / 65535.0
@@ -244,7 +243,8 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 	im2 := image.NewNRGBA(im1.Bounds())
 
 	// TODO: Figure out a suitable size for the lookup table.
-	fp.makeOutputCCTableX_8(10000)
+	outputCCTableX_8Size := 10000
+	outputCCTableX_8 := fp.makeOutputCCTableX_8(outputCCTableX_8Size)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to NRGBA format")
@@ -266,10 +266,10 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 
 			// Do colorspace conversion if needed.
 			if fp.outputCCF != nil && sam2[3] > 0 {
-				if fp.outputCCTableX_8 != nil {
+				if outputCCTableX_8 != nil {
 					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
-						sam2[k] = fp.outputCCTableX_8[int(sam1[k]*float32(fp.outputCCTableX_8Size-1)+0.5)]
+						sam2[k] = outputCCTableX_8[int(sam1[k]*float32(outputCCTableX_8Size-1)+0.5)]
 					}
 					continue
 				} else {
@@ -295,7 +295,8 @@ func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
 
 	// Because we still need to convert to associated alpha after doing color conversion,
 	// the lookup table should return high-precision numbers -- uint8 is not enough.
-	fp.makeOutputCCTableX_32(10000)
+	outputCCTableX_32Size := 10000
+	outputCCTableX_32 := fp.makeOutputCCTableX_32(outputCCTableX_32Size)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to RGBA format")
@@ -317,10 +318,10 @@ func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
 
 			// Do colorspace conversion if needed.
 			if fp.outputCCF != nil && sam2[3] > 0 {
-				if fp.outputCCTableX_32 != nil {
+				if outputCCTableX_32 != nil {
 					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
-						sam1[k] = fp.outputCCTableX_32[int(sam1[k]*float32(fp.outputCCTableX_32Size-1)+0.5)]
+						sam1[k] = outputCCTableX_32[int(sam1[k]*float32(outputCCTableX_32Size-1)+0.5)]
 					}
 				} else {
 					// Do colorspace conversion the slow way.
