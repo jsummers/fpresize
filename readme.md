@@ -22,7 +22,11 @@ is the first path in your `GOPATH`  environment variables.
 Documentation
 -------------
 
-Documentation is incomplete. After installing, type:
+The documentation may be read online at
+[GoPkgDoc](http://go.pkgdoc.org/github.com/jsummers/fpresize).
+
+
+Or, after installing, type:
 
     godoc github.com/jsummers/fpresize | more
 
@@ -33,12 +37,37 @@ Other information
 Fpresize is almost feature-complete. I will try not to break
 backward-compatibility without a really good reason.
 
-Future plans include better documentation, automated testing, and
-performance improvements.
+Future plans include better automated testing, and performance
+improvements.
 
-Some of fpresize was copied (and translated) from my C library,
+Parts of fpresize are based on my from my C library,
 [ImageWorsener](http://entropymine.com/imageworsener/).
 But fpresize has far fewer features, and is not *quite* as accurate.
 
+License
+-------
+
+Fpresize is distributed under an MIT-style license.
+
 Copyright &copy; 2012 Jason Summers
 <[jason1@pobox.com](mailto:jason1@pobox.com)>
+
+<pre>
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+</pre>
