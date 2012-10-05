@@ -19,8 +19,12 @@ type FPObject struct {
 	srcFPImage *FPImage
 	srcBounds  image.Rectangle
 	dstBounds  image.Rectangle
-	srcW, srcH int
-	dstW, dstH int
+	srcW       int
+	srcH       int
+	dstCanvasW int
+	dstCanvasH int
+	dstTrueW   float64
+	dstTrueH   float64
 
 	hasTransparency bool // Does the source image have transparency?
 
@@ -247,14 +251,14 @@ func resampleWorker(workQueue chan resampleWorkItem) {
 // Create dst, an image with a different height than src.
 // dst is a zeroed-out struct, created by the caller.
 // resizeHeight sets its fields, and makes its origin (0,0).
-func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
+func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage) {
 	var nSamples int
 	var srcH int
 	var w int // width of both images
 	var wi resampleWorkItem
 	var i int
 
-	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstH)
+	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstCanvasH)
 
 	w = src.Rect.Max.X - src.Rect.Min.X
 	srcH = src.Rect.Max.Y - src.Rect.Min.Y
@@ -262,13 +266,13 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
 	dst.Rect.Min.X = 0
 	dst.Rect.Min.Y = 0
 	dst.Rect.Max.X = w
-	dst.Rect.Max.Y = dstH
+	dst.Rect.Max.Y = fp.dstCanvasH
 
 	dst.Stride = w * 4
-	nSamples = dst.Stride * dstH
+	nSamples = dst.Stride * fp.dstCanvasH
 	dst.Pix = make([]float32, nSamples)
 
-	wi.weightList = fp.createWeightList(srcH, dstH, true)
+	wi.weightList = fp.createWeightList(srcH, fp.dstCanvasH, true)
 
 	wi.srcStride = src.Stride
 	wi.dstStride = dst.Stride
@@ -303,27 +307,27 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage, dstH int) {
 
 // Create dst, an image with a different width than src.
 // TODO: Maybe merge resizeWidth & resizeHeight
-func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage, dstW int) {
+func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage) {
 	var nSamples int
 	var srcW int
 	var h int // height of both images
 	var wi resampleWorkItem
 	var i int
 
-	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstW)
+	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstCanvasW)
 
 	srcW = src.Rect.Max.X - src.Rect.Min.X
 	h = src.Rect.Max.Y - src.Rect.Min.Y
 
 	dst.Rect.Min.X = 0
 	dst.Rect.Min.Y = 0
-	dst.Rect.Max.X = dstW
+	dst.Rect.Max.X = fp.dstCanvasW
 	dst.Rect.Max.Y = h
-	dst.Stride = dstW * 4
+	dst.Stride = fp.dstCanvasW * 4
 	nSamples = dst.Stride * h
 	dst.Pix = make([]float32, nSamples)
 
-	wi.weightList = fp.createWeightList(srcW, dstW, false)
+	wi.weightList = fp.createWeightList(srcW, fp.dstCanvasW, false)
 
 	wi.srcStride = 4
 	wi.dstStride = 4
@@ -464,9 +468,9 @@ func (fp *FPObject) SetBlur(blur float64) {
 // this information.
 func (fp *FPObject) ScaleFactor(isVertical bool) float64 {
 	if isVertical {
-		return float64(fp.dstH) / float64(fp.srcH)
+		return fp.dstTrueH / float64(fp.srcH)
 	}
-	return float64(fp.dstW) / float64(fp.srcW)
+	return fp.dstTrueW / float64(fp.srcW)
 }
 
 // HasTransparency returns true if the source image has any pixels that are
@@ -537,9 +541,16 @@ func (fp *FPObject) SetOutputColorConverterFlags(flags uint32) {
 // Set the size and origin of the resized image.
 func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 	fp.dstBounds = dstBounds
-	fp.dstW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
-	fp.dstH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
+	fp.dstCanvasW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
+	fp.dstCanvasH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
+	fp.dstTrueW = float64(fp.dstCanvasW)
+	fp.dstTrueH = float64(fp.dstCanvasH)
 	fp.virtualPixels = VirtualPixelsNone
+}
+
+func (fp *FPObject) SetTargetBoundsAdvanced(dstBounds image.Rectangle,
+	x1, y1, x2, y2 float64) {
+
 }
 
 // Change how the edges of the image are handled.
@@ -577,7 +588,7 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 		fp.numWorkers = fp.maxWorkers
 	}
 
-	if int64(fp.dstW)*int64(fp.dstH) > maxImagePixels {
+	if int64(fp.dstCanvasW)*int64(fp.dstCanvasH) > maxImagePixels {
 		return nil, errors.New("Target image too large")
 	}
 
@@ -609,18 +620,18 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 	// due to caching, that makes changing the width much faster than the height.
 	// So it is beneficial to resize the height first if we are increasing the
 	// image size, and the width first if we are reducing it.
-	if fp.dstW > fp.srcW {
+	if fp.dstCanvasW > fp.srcW {
 		intermedFPImage = new(FPImage)
-		fp.resizeHeight(fp.srcFPImage, intermedFPImage, fp.dstH)
+		fp.resizeHeight(fp.srcFPImage, intermedFPImage)
 
 		dstFPImage = new(FPImage)
-		fp.resizeWidth(intermedFPImage, dstFPImage, fp.dstW)
+		fp.resizeWidth(intermedFPImage, dstFPImage)
 	} else {
 		intermedFPImage = new(FPImage)
-		fp.resizeWidth(fp.srcFPImage, intermedFPImage, fp.dstW)
+		fp.resizeWidth(fp.srcFPImage, intermedFPImage)
 
 		dstFPImage = new(FPImage)
-		fp.resizeHeight(intermedFPImage, dstFPImage, fp.dstH)
+		fp.resizeHeight(intermedFPImage, dstFPImage)
 	}
 
 	fp.progressMsgf("Post-processing image")

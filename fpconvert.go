@@ -53,7 +53,7 @@ func (fp *FPObject) makeOutputCCTableX_8(tableSize int) []uint8 {
 	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
 		return nil
 	}
-	if fp.dstW*fp.dstH < 16384 {
+	if fp.dstCanvasW*fp.dstCanvasH < 16384 {
 		return nil
 	}
 
@@ -87,7 +87,7 @@ func (fp *FPObject) makeOutputCCTableX_32(tableSize int) []float32 {
 	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
 		return nil
 	}
-	if fp.dstW*fp.dstH < 16384 {
+	if fp.dstCanvasW*fp.dstCanvasH < 16384 {
 		return nil
 	}
 
