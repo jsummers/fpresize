@@ -144,6 +144,8 @@ func resizeMain(options *options_type) error {
 		fp.SetFilter(fpresize.MakeGaussianFilter())
 	} else if options.filterName == "triangle" {
 		fp.SetFilter(fpresize.MakeTriangleFilter())
+	} else if options.filterName == "boxavg" {
+		fp.SetFilter(fpresize.MakeBoxAvgFilter())
 	} else {
 		return fmt.Errorf("Unrecognized filter %+q", options.filterName)
 	}

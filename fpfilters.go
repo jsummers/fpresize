@@ -51,6 +51,28 @@ func MakeTriangleFilter() *Filter {
 	return f
 }
 
+// Returns a normalized box filter.
+// This is not quite a typical box filter. It is not constant-valued.
+//
+// If -0.5 < x < 0.5, the value is 1.
+// If x = 0.5 or x = -0.5, the value is 0.5.
+func MakeBoxAvgFilter() *Filter {
+	f := new(Filter)
+	f.F = func(x float64, scaleFactor float64) float64 {
+		if x < 0.499999 {
+			return 1.0
+		}
+		if x <= 0.500001 {
+			return 0.5
+		}
+		return 0.0
+	}
+	f.Radius = func(scaleFactor float64) float64 {
+		return 0.5001
+	}
+	return f
+}
+
 // Returns a gaussian filter, evaluated out to 4 standard deviations.
 func MakeGaussianFilter() *Filter {
 	f := new(Filter)
@@ -58,12 +80,12 @@ func MakeGaussianFilter() *Filter {
 		if x >= 2.0 {
 			return 0.0
 		}
-		v := math.Exp(-2.0*x*x) * 0.79788456080286535587989;
+		v := math.Exp(-2.0*x*x) * 0.79788456080286535587989
 		if x <= 1.999 {
 			return v
 		}
 		// Slightly alter the filter to make it continuous:
-		return 1000.0*(2.0-x)*v
+		return 1000.0 * (2.0 - x) * v
 	}
 	f.Radius = func(scaleFactor float64) float64 {
 		return 2.0
