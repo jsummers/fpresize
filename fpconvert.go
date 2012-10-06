@@ -22,7 +22,7 @@ func (fp *FPObject) makeInputCCLookupTable() *[65536]float32 {
 	if (fp.inputCCFFlags & CCFFlagWholePixels) != 0 {
 		return nil
 	}
-	if fp.srcW*fp.srcH < 16384 {
+	if fp.srcW*fp.srcH < 16384*fp.numWorkers {
 		// Don't bother with a lookup table if the image is very small.
 		// It's hard to estimate what the threshold should be, but accuracy is not
 		// very important here.
@@ -104,8 +104,8 @@ func (fp *FPObject) makeOutputCCTableX_32(tableSize int) []float32 {
 // Data that is constant for all workers.
 type srcToFPWorkContext struct {
 	inputCCLookupTable16 *[65536]float32
-	im *FPImage
-	src_as_RGBA *image.RGBA
+	im                   *FPImage
+	src_as_RGBA          *image.RGBA
 }
 
 type srcToFPWorkItem struct {
@@ -114,7 +114,7 @@ type srcToFPWorkItem struct {
 }
 
 // Convert a row of pixels from the source image format to FP format.
-func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, wi srcToFPWorkItem) {
+func (fp *FPObject) srcToFP_1row(wc *srcToFPWorkContext, j int) {
 	var r, g, b, a uint32
 	var srcclr color.Color
 	var i int
@@ -122,12 +122,12 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, wi srcToFPWorkItem) {
 	for i = 0; i < fp.srcW; i++ {
 		// Read a pixel from the source image, into uint16 samples
 		if wc.src_as_RGBA != nil {
-			r = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i]) * 257
-			g = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i+1]) * 257
-			b = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i+2]) * 257
-			a = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i+3]) * 257
+			r = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i]) * 257
+			g = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i+1]) * 257
+			b = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i+2]) * 257
+			a = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i+3]) * 257
 		} else {
-			srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+wi.j)
+			srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
 			r, g, b, a = srcclr.RGBA()
 		}
 
@@ -137,7 +137,7 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, wi srcToFPWorkItem) {
 
 		// Identify the slice of samples representing this pixel in the
 		// converted image.
-		sam := wc.im.Pix[wi.j*wc.im.Stride+4*i : wi.j*wc.im.Stride+4*i+4]
+		sam := wc.im.Pix[j*wc.im.Stride+4*i : j*wc.im.Stride+4*i+4]
 
 		// Choose from among several methods of converting the pixel to our
 		// desired format.
@@ -190,8 +190,20 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, wi srcToFPWorkItem) {
 	}
 }
 
+func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFPWorkItem) {
+	for {
+		wi := <-workQueue
+		if wi.stopNow {
+			return
+		}
+
+		fp.srcToFP_1row(wc, wi.j)
+	}
+}
+
 // Copies(&converts) from fp.srcImg to the given image.
 func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
+	var i int
 	var j int
 	var nSamples int
 	var wi srcToFPWorkItem
@@ -217,12 +229,28 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 
 	// If the underlying type of fp.srcImage is RGBA, we can do some performance
 	// optimization.
+	// TODO: It would be nice if we could optimize YCbCr images in the same way.
 	wc.src_as_RGBA, _ = fp.srcImage.(*image.RGBA)
 
+	workQueue := make(chan srcToFPWorkItem)
+
+	for i = 0; i < fp.numWorkers; i++ {
+		go fp.srcToFPWorker(wc, workQueue)
+	}
+
+	// Each row is a "work item". Send each row to a worker.
 	for j = 0; j < fp.srcH; j++ {
 		wi.j = j
-		fp.srcToFPWorker(wc, wi)
+		workQueue <- wi
 	}
+
+	// Send out a "stop work" order. When all workers have received it, we know
+	// that all the work is done.
+	wi.stopNow = true
+	for i = 0; i < fp.numWorkers; i++ {
+		workQueue <- wi
+	}
+
 	return nil
 }
 
