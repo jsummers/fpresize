@@ -235,12 +235,10 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 }
 
 // im1 is floating point, linear colorspace, unassociated alpha
-// im2 will be uint8, target colorspace, unassociated alpha
+// im2 is uint8, target colorspace, unassociated alpha
 // It's okay to modify im1's pixels; it's about to be thrown away.
-func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
+func (fp *FPObject) convertDstFPImageToNRGBA_main(im1 *FPImage, im2Pix []uint8, im2Stride int) {
 	var i, j, k int
-
-	im2 := image.NewNRGBA(im1.Bounds())
 
 	// This table size is optimized for sRGB. The sRGB curve's slope for
 	// the darkest colors (the ones we're most concerned about) is 12.92,
@@ -260,7 +258,7 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
 		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
 			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
-			sam2 := im2.Pix[j*im2.Stride+i*4 : j*im2.Stride+i*4+4]
+			sam2 := im2Pix[j*im2Stride+i*4 : j*im2Stride+i*4+4]
 
 			// Set the alpha sample
 			if !fp.hasTransparency {
@@ -289,11 +287,15 @@ func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
 			}
 		}
 	}
+}
 
+func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
+	im2 := image.NewNRGBA(im1.Bounds())
+	fp.convertDstFPImageToNRGBA_main(im1, im2.Pix, im2.Stride)
 	return im2
 }
 
-func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
+func (fp *FPObject) convertDstFPImageToRGBA_main(im1 *FPImage) *image.RGBA {
 	var i, j, k int
 
 	im2 := image.NewRGBA(im1.Bounds())
@@ -341,6 +343,18 @@ func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
 		}
 	}
 
+	return im2
+}
+
+func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
+	if fp.hasTransparency {
+		return fp.convertDstFPImageToRGBA_main(im1)
+	}
+
+	// If the image has no transparency, use convertDstFPImageToNRGBA_main,
+	// which is usually somewhat faster.
+	im2 := image.NewRGBA(im1.Bounds())
+	fp.convertDstFPImageToNRGBA_main(im1, im2.Pix, im2.Stride)
 	return im2
 }
 
