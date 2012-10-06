@@ -1,48 +1,148 @@
 // ◄◄◄ fpresize_test.go ►►►
 
+// This file implements regression tests for fpresize. It is not a part of
+// the main fpresize library.
+
 package fpresize
 
 import "testing"
+import "fmt"
+import "os"
+import "bytes"
+import "io/ioutil"
 import "image"
-import "image/color"
+import "image/png"
 
-func sampleImage1() image.Image {
-	im := image.NewNRGBA(image.Rect(0, 0, 15, 15))
-	for j := 0; j < 15; j++ {
-		for i := 0; i < 15; i++ {
-			if i == 7 && j == 7 {
-				im.SetNRGBA(i, j, color.NRGBA{230, 220, 210, 230})
-			} else {
-				im.SetNRGBA(i, j, color.NRGBA{50, 40, 60, 150})
-			}
-		}
+func readImageFromFile(t *testing.T, srcFilename string) image.Image {
+	var err error
+	var srcImg image.Image
+
+	file, err := os.Open(srcFilename)
+	if err != nil {
+		t.Logf("%s\n", err.Error())
+		t.FailNow()
+		return nil
 	}
-	return im
+	defer file.Close()
+
+	srcImg, _, err = image.Decode(file)
+	if err != nil {
+		t.Logf("%s\n", err.Error())
+		t.FailNow()
+		return nil
+	}
+
+	return srcImg
 }
 
-func checkPixel(t *testing.T, name string, im image.Image, x, y int, e_r, e_g, e_b, e_a uint32) {
-	c := im.At(x, y)
-	a_r, a_g, a_b, a_a := c.RGBA()
-	if a_r != e_r || a_g != e_g || a_b != e_b || a_a != e_a {
-		t.Logf("%s: color is %v, %v, %v, %v\n", name, a_r, a_g, a_b, a_a)
-		t.Logf("%s: expected %v, %v, %v, %v\n", name, e_r, e_g, e_b, e_a)
+func writeImageToFile(t *testing.T, img image.Image, dstFilename string) {
+	var err error
+
+	file, err := os.Create(dstFilename)
+	if err != nil {
+		t.Logf("%s\n", err.Error())
+		t.FailNow()
+		return
+	}
+	defer file.Close()
+
+	err = png.Encode(file, img)
+	if err != nil {
+		t.Logf("%s\n", err.Error())
+		t.FailNow()
+		return
+	}
+}
+
+func compareFiles(t *testing.T, expectedFN string, actualFN string) {
+	var expectedBytes []byte
+	var actualBytes []byte
+	var err error
+
+	expectedBytes, err = ioutil.ReadFile(expectedFN)
+	if err != nil {
+		t.Logf("Failed to open for compare: %s\n", err.Error())
 		t.Fail()
+		return
+	}
+
+	actualBytes, err = ioutil.ReadFile(actualFN)
+	if err != nil {
+		t.Logf("Failed to open for compare: %s\n", err.Error())
+		t.FailNow()
+		return
+	}
+
+	if len(expectedBytes) != len(actualBytes) {
+		t.Logf("%s and %s differ in size\n", expectedFN, actualFN)
+		t.Fail()
+		return
+	}
+
+	if 0 != bytes.Compare(actualBytes, expectedBytes) {
+		t.Logf("%s and %s differ\n", expectedFN, actualFN)
+		t.Fail()
+		return
 	}
 }
 
-func TestOne(t *testing.T) {
+type testOptions struct {
+	srcImgDir   string
+	actualDir   string
+	expectedDir string
+	infn        string
+	outfn       string
+	dstH, dstW  int
+}
+
+func runFileTest(t *testing.T, opts *testOptions) {
+	var src image.Image
+	var dst image.Image
 	var err error
 
 	fp := new(FPObject)
-	src := sampleImage1()
+	src = readImageFromFile(t, opts.srcImgDir+opts.infn)
+
 	fp.SetSourceImage(src)
-	fp.SetTargetBounds(image.Rect(0, 0, 100, 99))
-	dst, err := fp.Resize()
+	fp.SetTargetBounds(image.Rect(0, 0, opts.dstW, opts.dstH))
+
+	dst, err = fp.ResizeToNRGBA()
 	if err != nil {
 		t.Logf("%s\n", err.Error())
 		t.FailNow()
 	}
 
-	checkPixel(t, "test1", dst, 50, 54, 23663, 22361, 22142, 43098)
-	checkPixel(t, "test2", dst, 43, 48, 9654, 8358, 10531, 38876)
+	writeImageToFile(t, dst, opts.actualDir+opts.outfn)
+
+	// Comparing output files is not ideal (comparing pixel colors would be
+	// better), but it will do.
+	compareFiles(t, opts.expectedDir+opts.outfn, opts.actualDir+opts.outfn)
+}
+
+func TestTwo(t *testing.T) {
+	opts := new(testOptions)
+
+	// These tests assume that "go test" sets the current directory to the projects'
+	// main source directory.
+	opts.srcImgDir = fmt.Sprintf("testdata%csrcimg%c", os.PathSeparator, os.PathSeparator)
+	opts.actualDir = fmt.Sprintf("testdata%cactual%c", os.PathSeparator, os.PathSeparator)
+	opts.expectedDir = fmt.Sprintf("testdata%cexpected%c", os.PathSeparator, os.PathSeparator)
+
+	opts.outfn = "test1.png"
+	opts.infn = "rgb8a.png"
+	opts.dstW = 20
+	opts.dstH = 18
+	runFileTest(t, opts)
+
+	opts.outfn = "test2.png"
+	opts.infn = "rgb8.png"
+	opts.dstW = 29
+	opts.dstH = 28
+	runFileTest(t, opts)
+
+	opts.outfn = "test3.png"
+	opts.infn = "rgb16a.png"
+	opts.dstW = 17
+	opts.dstH = 17
+	runFileTest(t, opts)
 }
