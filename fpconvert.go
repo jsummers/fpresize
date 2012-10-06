@@ -9,10 +9,9 @@
 package fpresize
 
 import "image"
-import "image/color"
 import "errors"
 
-func (fp *FPObject) makeInputLUT_16to32() *[65536]float32 {
+func (fp *FPObject) makeInputLUT_Xto32(tableSize int) []float32 {
 	if fp.inputCCF == nil {
 		return nil
 	}
@@ -22,7 +21,7 @@ func (fp *FPObject) makeInputLUT_16to32() *[65536]float32 {
 	if (fp.inputCCFFlags & CCFFlagWholePixels) != 0 {
 		return nil
 	}
-	if fp.srcW*fp.srcH < 16384*fp.numWorkers {
+	if fp.srcW*fp.srcH < (tableSize/4)*fp.numWorkers {
 		// Don't bother with a lookup table if the image is very small.
 		// It's hard to estimate what the threshold should be, but accuracy is not
 		// very important here.
@@ -31,11 +30,11 @@ func (fp *FPObject) makeInputLUT_16to32() *[65536]float32 {
 
 	fp.progressMsgf("Creating input color correction lookup table")
 
-	tbl := new([65536]float32)
-	for i := 0; i < 65536; i++ {
-		tbl[i] = float32(i) / 65535.0
+	tbl := make([]float32, tableSize)
+	for i := 0; i < tableSize; i++ {
+		tbl[i] = float32(i) / float32(tableSize-1)
 	}
-	fp.inputCCF(tbl[:])
+	fp.inputCCF(tbl)
 	return tbl
 }
 
@@ -103,8 +102,8 @@ func (fp *FPObject) makeOutputLUT_Xto32(tableSize int) []float32 {
 
 // Data that is constant for all workers.
 type srcToFPWorkContext struct {
-	inputLUT_16to32 *[65536]float32
-	im              *FPImage
+	inputLUT_16to32 []float32
+	dst             *FPImage
 	src_AsRGBA      *image.RGBA
 }
 
@@ -113,78 +112,76 @@ type srcToFPWorkItem struct {
 	stopNow bool
 }
 
+// Convert from fp.srcImage (or wc.src_AsRGBA if available)
+// to wc.dst.
 func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
-	var r, g, b, a uint32
-	var srcclr color.Color
-	var i int
+	var srcSam16 [4]uint32 // Source RGBA samples (uint16 stored in uint32)
+	var k int
 
-	for i = 0; i < fp.srcW; i++ {
+	for i := 0; i < fp.srcW; i++ {
 		// Read a pixel from the source image, into uint16 samples
 		if wc.src_AsRGBA != nil {
-			r = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i]) * 257
-			g = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+1]) * 257
-			b = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+2]) * 257
-			a = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+3]) * 257
+			for k = 0; k < 4; k++ {
+				srcSam16[k] = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+k]) * 257
+			}
 		} else {
-			srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
-			r, g, b, a = srcclr.RGBA()
+			srcclr := fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
+			srcSam16[0], srcSam16[1], srcSam16[2], srcSam16[3] = srcclr.RGBA()
 		}
 
-		if a < 65535 {
+		if srcSam16[3] < 65535 {
 			fp.hasTransparency = true
 		}
 
 		// Identify the slice of samples representing this pixel in the
 		// converted image.
-		sam := wc.im.Pix[j*wc.im.Stride+4*i : j*wc.im.Stride+4*i+4]
+		dstSam := wc.dst.Pix[j*wc.dst.Stride+4*i : j*wc.dst.Stride+4*i+4]
 
 		// Choose from among several methods of converting the pixel to our
 		// desired format.
-		if a == 0 {
+		if srcSam16[3] == 0 {
 			// Handle fully-transparent pixels quickly.
 			// Color correction is irrelevant here.
 			// Nothing to do: the samples will have been initialized to 0.0,
 			// which is what we want.
 		} else if fp.inputCCF == nil {
 			// No color correction; just convert from uint16(0 ... 65535) to float(0.0 ... 1.0)
-			sam[0] = float32(r) / 65535.0
-			sam[1] = float32(g) / 65535.0
-			sam[2] = float32(b) / 65535.0
-			sam[3] = float32(a) / 65535.0
-		} else if a == 65535 {
+			for k = 0; k < 4; k++ {
+				dstSam[k] = float32(srcSam16[k]) / 65535.0
+			}
+		} else if srcSam16[3] == 65535 {
 			// Fast path for fully-opaque pixels.
 			if wc.inputLUT_16to32 != nil {
 				// Convert to linear color, using a lookup table.
-				sam[0] = wc.inputLUT_16to32[r]
-				sam[1] = wc.inputLUT_16to32[g]
-				sam[2] = wc.inputLUT_16to32[b]
+				for k = 0; k < 3; k++ {
+					dstSam[k] = wc.inputLUT_16to32[srcSam16[k]]
+				}
 			} else {
 				// Convert to linear color, without a lookup table.
-				sam[0] = float32(r) / 65535.0
-				sam[1] = float32(g) / 65535.0
-				sam[2] = float32(b) / 65535.0
-				fp.inputCCF(sam[0:3])
+				for k = 0; k < 3; k++ {
+					dstSam[k] = float32(srcSam16[k]) / 65535.0
+				}
+				fp.inputCCF(dstSam[0:3])
 			}
-			sam[3] = 1.0
+			dstSam[3] = 1.0
 		} else {
 			// Partial transparency, with color correction.
-			// Convert to floating point.
-			sam[0] = float32(r) / 65535.0
-			sam[1] = float32(g) / 65535.0
-			sam[2] = float32(b) / 65535.0
-			sam[3] = float32(a) / 65535.0
-			// Convert to unassociated alpha, so that we can do color conversion.
-			sam[0] /= sam[3]
-			sam[1] /= sam[3]
-			sam[2] /= sam[3]
+			// Convert to floating point,
+			// and to unassociated alpha, so that we can do color conversion.
+			dstSam[3] = float32(srcSam16[3]) // Leave at (0...65535) for the next loop
+			for k = 0; k < 3; k++ {
+				dstSam[k] = float32(srcSam16[k]) / dstSam[3]
+			}
+			dstSam[3] /= 65535.0
+
 			// Convert to linear color.
-			// (inputCCLookupTable16 could be used, but wouldn't be as accurate,
+			// (inputLUT_16to32 could be used, but wouldn't be as accurate,
 			// because the colors won't appear in it exactly.)
-			fp.inputCCF(sam[0:3])
+			fp.inputCCF(dstSam[0:3])
 			// Convert back to associated alpha.
-			sam[0] *= sam[3]
-			sam[1] *= sam[3]
-			sam[2] *= sam[3]
+			for k = 0; k < 3; k++ {
+				dstSam[k] *= dstSam[3]
+			}
 		}
 	}
 }
@@ -201,7 +198,7 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 }
 
 // Copies(&converts) from fp.srcImg to the given image.
-func (fp *FPObject) convertSrcToFP(im *FPImage) error {
+func (fp *FPObject) convertSrcToFP(dst *FPImage) error {
 	var i int
 	var j int
 	var nSamples int
@@ -212,7 +209,7 @@ func (fp *FPObject) convertSrcToFP(im *FPImage) error {
 	}
 
 	wc := new(srcToFPWorkContext)
-	wc.im = im
+	wc.dst = dst
 
 	// If the underlying type of fp.srcImage is RGBA, we can do some performance
 	// optimization.
@@ -220,18 +217,18 @@ func (fp *FPObject) convertSrcToFP(im *FPImage) error {
 	wc.src_AsRGBA, _ = fp.srcImage.(*image.RGBA)
 
 	// TODO: If wc.src_AsRGBA!=nil, we could use a smaller LUT (8to32).
-	wc.inputLUT_16to32 = fp.makeInputLUT_16to32()
+	wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
 
 	fp.progressMsgf("Converting to FPImage format")
 
 	// Allocate the pixel array
-	im.Rect.Min.X = 0
-	im.Rect.Min.Y = 0
-	im.Rect.Max.X = fp.srcW
-	im.Rect.Max.Y = fp.srcH
-	im.Stride = fp.srcW * 4
-	nSamples = im.Stride * fp.srcH
-	im.Pix = make([]float32, nSamples)
+	dst.Rect.Min.X = 0
+	dst.Rect.Min.Y = 0
+	dst.Rect.Max.X = fp.srcW
+	dst.Rect.Max.Y = fp.srcH
+	dst.Stride = fp.srcW * 4
+	nSamples = dst.Stride * fp.srcH
+	dst.Pix = make([]float32, nSamples)
 
 	workQueue := make(chan srcToFPWorkItem)
 
@@ -255,7 +252,7 @@ func (fp *FPObject) convertSrcToFP(im *FPImage) error {
 	return nil
 }
 
-// Convert from:
+// Convert in-place from:
 //  * linear colorspace
 //  * unassociated alpha
 // to:
