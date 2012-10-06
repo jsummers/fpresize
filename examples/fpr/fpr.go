@@ -200,7 +200,8 @@ func resizeMain(options *options_type) error {
 	}
 
 	if options.debug {
-		fmt.Printf("Done. Total time: %v\n", time.Now().Sub(startTime))
+		progressMsg(options, "Done")
+		fmt.Printf("Total time: %v\n", time.Now().Sub(startTime))
 	} else {
 		progressMsg(options, "Done")
 	}

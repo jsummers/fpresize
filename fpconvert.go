@@ -101,18 +101,108 @@ func (fp *FPObject) makeOutputCCTableX_32(tableSize int) []float32 {
 	return tbl
 }
 
-// Copies(&converts) from fp.srcImg to the given image.
-func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
-	var i, j int
-	var nSamples int
+// Data that is constant for all workers.
+type srcToFPWorkContext struct {
+	inputCCLookupTable16 *[65536]float32
+	im *FPImage
+	src_as_RGBA *image.RGBA
+}
+
+type srcToFPWorkItem struct {
+	j       int
+	stopNow bool
+}
+
+// Convert a row of pixels from the source image format to FP format.
+func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, wi srcToFPWorkItem) {
 	var r, g, b, a uint32
 	var srcclr color.Color
+	var i int
+
+	for i = 0; i < fp.srcW; i++ {
+		// Read a pixel from the source image, into uint16 samples
+		if wc.src_as_RGBA != nil {
+			r = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i]) * 257
+			g = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i+1]) * 257
+			b = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i+2]) * 257
+			a = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*wi.j+4*i+3]) * 257
+		} else {
+			srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+wi.j)
+			r, g, b, a = srcclr.RGBA()
+		}
+
+		if a < 65535 {
+			fp.hasTransparency = true
+		}
+
+		// Identify the slice of samples representing this pixel in the
+		// converted image.
+		sam := wc.im.Pix[wi.j*wc.im.Stride+4*i : wi.j*wc.im.Stride+4*i+4]
+
+		// Choose from among several methods of converting the pixel to our
+		// desired format.
+		if a == 0 {
+			// Handle fully-transparent pixels quickly.
+			// Color correction is irrelevant here.
+			// Nothing to do: the samples will have been initialized to 0.0,
+			// which is what we want.
+		} else if fp.inputCCF == nil {
+			// No color correction; just convert from uint16(0 ... 65535) to float(0.0 ... 1.0)
+			sam[0] = float32(r) / 65535.0
+			sam[1] = float32(g) / 65535.0
+			sam[2] = float32(b) / 65535.0
+			sam[3] = float32(a) / 65535.0
+		} else if a == 65535 {
+			// Fast path for fully-opaque pixels.
+			if wc.inputCCLookupTable16 != nil {
+				// Convert to linear color, using a lookup table.
+				sam[0] = wc.inputCCLookupTable16[r]
+				sam[1] = wc.inputCCLookupTable16[g]
+				sam[2] = wc.inputCCLookupTable16[b]
+			} else {
+				// Convert to linear color, without a lookup table.
+				sam[0] = float32(r) / 65535.0
+				sam[1] = float32(g) / 65535.0
+				sam[2] = float32(b) / 65535.0
+				fp.inputCCF(sam[0:3])
+			}
+			sam[3] = 1.0
+		} else {
+			// Partial transparency, with color correction.
+			// Convert to floating point.
+			sam[0] = float32(r) / 65535.0
+			sam[1] = float32(g) / 65535.0
+			sam[2] = float32(b) / 65535.0
+			sam[3] = float32(a) / 65535.0
+			// Convert to unassociated alpha, so that we can do color conversion.
+			sam[0] /= sam[3]
+			sam[1] /= sam[3]
+			sam[2] /= sam[3]
+			// Convert to linear color.
+			// (inputCCLookupTable16 could be used, but wouldn't be as accurate,
+			// because the colors won't appear in it exactly.)
+			fp.inputCCF(sam[0:3])
+			// Convert back to associated alpha.
+			sam[0] *= sam[3]
+			sam[1] *= sam[3]
+			sam[2] *= sam[3]
+		}
+	}
+}
+
+// Copies(&converts) from fp.srcImg to the given image.
+func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
+	var j int
+	var nSamples int
+	var wi srcToFPWorkItem
 
 	if int64(fp.srcW)*int64(fp.srcH) > maxImagePixels {
 		return errors.New("Source image too large to process")
 	}
 
-	inputCCLookupTable16 := fp.makeInputCCLookupTable()
+	wc := new(srcToFPWorkContext)
+	wc.im = im
+	wc.inputCCLookupTable16 = fp.makeInputCCLookupTable()
 
 	fp.progressMsgf("Converting to FPImage format")
 
@@ -127,78 +217,11 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 
 	// If the underlying type of fp.srcImage is RGBA, we can do some performance
 	// optimization.
-	src_as_RGBA, _ := fp.srcImage.(*image.RGBA)
+	wc.src_as_RGBA, _ = fp.srcImage.(*image.RGBA)
 
 	for j = 0; j < fp.srcH; j++ {
-		for i = 0; i < fp.srcW; i++ {
-			// Read a pixel from the source image, into uint16 samples
-			if src_as_RGBA != nil {
-				r = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i]) * 257
-				g = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i+1]) * 257
-				b = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i+2]) * 257
-				a = uint32(src_as_RGBA.Pix[src_as_RGBA.Stride*j+4*i+3]) * 257
-			} else {
-				srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
-				r, g, b, a = srcclr.RGBA()
-			}
-
-			if a < 65535 {
-				fp.hasTransparency = true
-			}
-
-			// Identify the slice of samples representing this pixel in the
-			// converted image.
-			sam := im.Pix[j*im.Stride+4*i : j*im.Stride+4*i+4]
-
-			// Choose from among several methods of converting the pixel to our
-			// desired format.
-			if a == 0 {
-				// Handle fully-transparent pixels quickly.
-				// Color correction is irrelevant here.
-				// Nothing to do: the samples will have been initialized to 0.0,
-				// which is what we want.
-			} else if fp.inputCCF == nil {
-				// No color correction; just convert from uint16(0 ... 65535) to float(0.0 ... 1.0)
-				sam[0] = float32(r) / 65535.0
-				sam[1] = float32(g) / 65535.0
-				sam[2] = float32(b) / 65535.0
-				sam[3] = float32(a) / 65535.0
-			} else if a == 65535 {
-				// Fast path for fully-opaque pixels.
-				if inputCCLookupTable16 != nil {
-					// Convert to linear color, using a lookup table.
-					sam[0] = inputCCLookupTable16[r]
-					sam[1] = inputCCLookupTable16[g]
-					sam[2] = inputCCLookupTable16[b]
-				} else {
-					// Convert to linear color, without a lookup table.
-					sam[0] = float32(r) / 65535.0
-					sam[1] = float32(g) / 65535.0
-					sam[2] = float32(b) / 65535.0
-					fp.inputCCF(sam[0:3])
-				}
-				sam[3] = 1.0
-			} else {
-				// Partial transparency, with color correction.
-				// Convert to floating point.
-				sam[0] = float32(r) / 65535.0
-				sam[1] = float32(g) / 65535.0
-				sam[2] = float32(b) / 65535.0
-				sam[3] = float32(a) / 65535.0
-				// Convert to unassociated alpha, so that we can do color conversion.
-				sam[0] /= sam[3]
-				sam[1] /= sam[3]
-				sam[2] /= sam[3]
-				// Convert to linear color.
-				// (inputCCLookupTable16 could be used, but wouldn't be as accurate,
-				// because the colors won't appear in it exactly.)
-				fp.inputCCF(sam[0:3])
-				// Convert back to associated alpha.
-				sam[0] *= sam[3]
-				sam[1] *= sam[3]
-				sam[2] *= sam[3]
-			}
-		}
+		wi.j = j
+		fp.srcToFPWorker(wc, wi)
 	}
 	return nil
 }
