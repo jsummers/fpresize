@@ -170,9 +170,8 @@ func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 			dstSam[3] /= 65535.0
 
 			// Convert to linear color.
-			// (inputLUT_16to32 could be used, but wouldn't be as accurate,
-			// because the colors won't appear in it exactly.)
 			fp.inputCCF(dstSam[0:3])
+
 			// Convert back to associated alpha.
 			for k = 0; k < 3; k++ {
 				dstSam[k] *= dstSam[3]
@@ -203,19 +202,20 @@ func (fp *FPObject) convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
 		// converted image.
 		dstSam := wc.dst.Pix[j*wc.dst.Stride+4*i : j*wc.dst.Stride+4*i+4]
 
-		// Convert to floating point
-		for k = 0; k < 4; k++ {
-			dstSam[k] = float32(srcSam8[k]) / 255.0
-		}
-
 		// Do color correction, if necessary
-		if fp.inputCCF != nil {
-			if wc.inputLUT_8to32 != nil {
-				// Convert to linear color, using a lookup table.
-				for k = 0; k < 3; k++ {
-					dstSam[k] = wc.inputLUT_8to32[srcSam8[k]]
-				}
-			} else {
+		if fp.inputCCF != nil && wc.inputLUT_8to32 != nil {
+			// Convert to linear color, using a lookup table.
+			for k = 0; k < 3; k++ {
+				dstSam[k] = wc.inputLUT_8to32[srcSam8[k]]
+			}
+			dstSam[3] = float32(srcSam8[3]) / 255.0
+		} else {
+			// In all other cases, first read the uncorrected samples into dstSam
+			for k = 0; k < 4; k++ {
+				dstSam[k] = float32(srcSam8[k]) / 255.0
+			}
+
+			if fp.inputCCF != nil {
 				// Convert to linear color, without a lookup table.
 				fp.inputCCF(dstSam[0:3])
 			}
@@ -252,7 +252,16 @@ func (fp *FPObject) convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
 		// converted image.
 		dstSam := wc.dst.Pix[j*wc.dst.Stride+4*i : j*wc.dst.Stride+4*i+4]
 
-		// Convert to floating point
+		// If we are going to use a lookup table, do that now.
+		if srcSam8[3] == 255 && fp.inputCCF != nil && wc.inputLUT_8to32 != nil {
+			for k = 0; k < 3; k++ {
+				dstSam[k] = wc.inputLUT_8to32[srcSam8[k]]
+			}
+			dstSam[3] = 1.0
+			continue
+		}
+
+		// Otherwise, convert the sample to floating point
 		for k = 0; k < 4; k++ {
 			dstSam[k] = float32(srcSam8[k]) / 255.0
 		}
@@ -263,15 +272,8 @@ func (fp *FPObject) convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
 		}
 
 		if srcSam8[3] == 255 { // If pixel is opaque...
-			if wc.inputLUT_8to32 != nil {
-				// Convert to linear color, using a lookup table.
-				for k = 0; k < 3; k++ {
-					dstSam[k] = wc.inputLUT_8to32[srcSam8[k]]
-				}
-			} else {
-				// Convert to linear color, without a lookup table.
-				fp.inputCCF(dstSam[0:3])
-			}
+			// Opaque pixel, with color correction, but no LUT
+			fp.inputCCF(dstSam[0:3])
 			continue
 		}
 
