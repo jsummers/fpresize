@@ -16,7 +16,6 @@ import "runtime"
 // There is one FPObject per source image.
 type FPObject struct {
 	srcImage   image.Image
-	srcFPImage *FPImage
 	srcBounds  image.Rectangle
 	dstBounds  image.Rectangle
 	srcW       int
@@ -32,6 +31,10 @@ type FPObject struct {
 	// Size of the target rectangle onto which the source image is mapped.
 	dstTrueW float64
 	dstTrueH float64
+
+	// Source image in FP format. This is recorded, so that it can be
+	// resized multiple times.
+	srcFPImage *FPImage
 
 	hasTransparency bool // Does the source image have transparency?
 
@@ -266,15 +269,16 @@ func resampleWorker(workQueue chan resampleWorkItem) {
 }
 
 // Create dst, an image with a different height than src.
-// dst is a zeroed-out struct, created by the caller.
-// resizeHeight sets its fields, and makes its origin (0,0).
-func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage) {
+// dst's origin will be (0,0).
+func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 	var nSamples int
 	var w int // width of both images
 	var wi resampleWorkItem
 	var i int
 
 	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstCanvasH)
+
+	dst = new(FPImage)
 
 	w = src.Rect.Max.X - src.Rect.Min.X
 
@@ -318,17 +322,20 @@ func (fp *FPObject) resizeHeight(src *FPImage, dst *FPImage) {
 	for i = 0; i < fp.numWorkers; i++ {
 		workQueue <- wi
 	}
+	return
 }
 
 // Create dst, an image with a different width than src.
 // TODO: Maybe merge resizeWidth & resizeHeight
-func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage) {
+func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	var nSamples int
 	var h int // height of both images
 	var wi resampleWorkItem
 	var i int
 
 	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstCanvasW)
+
+	dst = new(FPImage)
 
 	h = src.Rect.Max.Y - src.Rect.Min.Y
 
@@ -367,6 +374,7 @@ func (fp *FPObject) resizeWidth(src *FPImage, dst *FPImage) {
 	for i = 0; i < fp.numWorkers; i++ {
 		workQueue <- wi
 	}
+	return
 }
 
 // Take an image fresh from resizeWidth/resizeHeight
@@ -638,7 +646,7 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 
 	if fp.srcFPImage == nil {
 		fp.srcFPImage = new(FPImage)
-		err = fp.copySrcToFPImage(fp.srcFPImage)
+		err = fp.convertSrcToFP(fp.srcFPImage)
 		if err != nil {
 			return nil, err
 		}
@@ -656,17 +664,11 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 	// So it is beneficial to resize the height first if we are increasing the
 	// image size, and the width first if we are reducing it.
 	if fp.dstCanvasW > fp.srcW {
-		intermedFPImage = new(FPImage)
-		fp.resizeHeight(fp.srcFPImage, intermedFPImage)
-
-		dstFPImage = new(FPImage)
-		fp.resizeWidth(intermedFPImage, dstFPImage)
+		intermedFPImage = fp.resizeHeight(fp.srcFPImage)
+		dstFPImage = fp.resizeWidth(intermedFPImage)
 	} else {
-		intermedFPImage = new(FPImage)
-		fp.resizeWidth(fp.srcFPImage, intermedFPImage)
-
-		dstFPImage = new(FPImage)
-		fp.resizeHeight(intermedFPImage, dstFPImage)
+		intermedFPImage = fp.resizeWidth(fp.srcFPImage)
+		dstFPImage = fp.resizeHeight(intermedFPImage)
 	}
 
 	fp.progressMsgf("Post-processing image")
@@ -685,13 +687,12 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 // You should almost always use ResizeToNRGBA, ResizeToRGBA, ResizeToNRGBA64,
 // or ResizeToRGBA64 instead.
 func (fp *FPObject) Resize() (*FPImage, error) {
-
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {
 		return nil, err
 	}
 
-	fp.convertDstFPImage(dstFPImage)
+	fp.convertFPToFinalFP(dstFPImage)
 	return dstFPImage, nil
 }
 
@@ -706,7 +707,7 @@ func (fp *FPObject) ResizeToNRGBA() (*image.NRGBA, error) {
 		return nil, err
 	}
 
-	nrgba := fp.convertDstFPImageToNRGBA(dstFPImage)
+	nrgba := fp.convertFPToNRGBA(dstFPImage)
 	return nrgba, nil
 }
 
@@ -720,7 +721,7 @@ func (fp *FPObject) ResizeToRGBA() (*image.RGBA, error) {
 		return nil, err
 	}
 
-	rgba := fp.convertDstFPImageToRGBA(dstFPImage)
+	rgba := fp.convertFPToRGBA(dstFPImage)
 	return rgba, nil
 }
 
@@ -730,13 +731,12 @@ func (fp *FPObject) ResizeToRGBA() (*image.RGBA, error) {
 // Use this if you intend to write the image to an 16-bits-per-sample PNG
 // file.
 func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
-
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {
 		return nil, err
 	}
 
-	nrgba64 := fp.convertDstFPImageToNRGBA64(dstFPImage)
+	nrgba64 := fp.convertFPToNRGBA64(dstFPImage)
 	return nrgba64, nil
 }
 
@@ -752,6 +752,6 @@ func (fp *FPObject) ResizeToRGBA64() (*image.RGBA64, error) {
 		return nil, err
 	}
 
-	rgba64 := fp.convertDstFPImageToRGBA64(dstFPImage)
+	rgba64 := fp.convertFPToRGBA64(dstFPImage)
 	return rgba64, nil
 }

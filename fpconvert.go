@@ -12,7 +12,7 @@ import "image"
 import "image/color"
 import "errors"
 
-func (fp *FPObject) makeInputCCLookupTable() *[65536]float32 {
+func (fp *FPObject) makeInputLUT_16to32() *[65536]float32 {
 	if fp.inputCCF == nil {
 		return nil
 	}
@@ -41,7 +41,7 @@ func (fp *FPObject) makeInputCCLookupTable() *[65536]float32 {
 
 // Make a lookup table that takes an int from 0 to tablesize-1,
 // and gives a uint8 (representing a sample from 0 to 255).
-func (fp *FPObject) makeOutputCCTableX_8(tableSize int) []uint8 {
+func (fp *FPObject) makeOutputLUT_Xto8(tableSize int) []uint8 {
 	var i int
 
 	if fp.inputCCF == nil {
@@ -75,7 +75,7 @@ func (fp *FPObject) makeOutputCCTableX_8(tableSize int) []uint8 {
 
 // Make a lookup table that takes an int from 0 to tablesize-1,
 // and gives a float32 (representing a sample from 0.0 to 1.0).
-func (fp *FPObject) makeOutputCCTableX_32(tableSize int) []float32 {
+func (fp *FPObject) makeOutputLUT_Xto32(tableSize int) []float32 {
 	var i int
 
 	if fp.inputCCF == nil {
@@ -103,9 +103,9 @@ func (fp *FPObject) makeOutputCCTableX_32(tableSize int) []float32 {
 
 // Data that is constant for all workers.
 type srcToFPWorkContext struct {
-	inputCCLookupTable16 *[65536]float32
-	im                   *FPImage
-	src_as_RGBA          *image.RGBA
+	inputLUT_16to32 *[65536]float32
+	im              *FPImage
+	src_AsRGBA      *image.RGBA
 }
 
 type srcToFPWorkItem struct {
@@ -113,19 +113,18 @@ type srcToFPWorkItem struct {
 	stopNow bool
 }
 
-// Convert a row of pixels from the source image format to FP format.
-func (fp *FPObject) srcToFP_1row(wc *srcToFPWorkContext, j int) {
+func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 	var r, g, b, a uint32
 	var srcclr color.Color
 	var i int
 
 	for i = 0; i < fp.srcW; i++ {
 		// Read a pixel from the source image, into uint16 samples
-		if wc.src_as_RGBA != nil {
-			r = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i]) * 257
-			g = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i+1]) * 257
-			b = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i+2]) * 257
-			a = uint32(wc.src_as_RGBA.Pix[wc.src_as_RGBA.Stride*j+4*i+3]) * 257
+		if wc.src_AsRGBA != nil {
+			r = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i]) * 257
+			g = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+1]) * 257
+			b = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+2]) * 257
+			a = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+3]) * 257
 		} else {
 			srcclr = fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
 			r, g, b, a = srcclr.RGBA()
@@ -154,11 +153,11 @@ func (fp *FPObject) srcToFP_1row(wc *srcToFPWorkContext, j int) {
 			sam[3] = float32(a) / 65535.0
 		} else if a == 65535 {
 			// Fast path for fully-opaque pixels.
-			if wc.inputCCLookupTable16 != nil {
+			if wc.inputLUT_16to32 != nil {
 				// Convert to linear color, using a lookup table.
-				sam[0] = wc.inputCCLookupTable16[r]
-				sam[1] = wc.inputCCLookupTable16[g]
-				sam[2] = wc.inputCCLookupTable16[b]
+				sam[0] = wc.inputLUT_16to32[r]
+				sam[1] = wc.inputLUT_16to32[g]
+				sam[2] = wc.inputLUT_16to32[b]
 			} else {
 				// Convert to linear color, without a lookup table.
 				sam[0] = float32(r) / 65535.0
@@ -197,12 +196,12 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 			return
 		}
 
-		fp.srcToFP_1row(wc, wi.j)
+		fp.convertSrcToFP_row(wc, wi.j)
 	}
 }
 
 // Copies(&converts) from fp.srcImg to the given image.
-func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
+func (fp *FPObject) convertSrcToFP(im *FPImage) error {
 	var i int
 	var j int
 	var nSamples int
@@ -214,7 +213,14 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 
 	wc := new(srcToFPWorkContext)
 	wc.im = im
-	wc.inputCCLookupTable16 = fp.makeInputCCLookupTable()
+
+	// If the underlying type of fp.srcImage is RGBA, we can do some performance
+	// optimization.
+	// TODO: It would be nice if we could optimize YCbCr images in the same way.
+	wc.src_AsRGBA, _ = fp.srcImage.(*image.RGBA)
+
+	// TODO: If wc.src_AsRGBA!=nil, we could use a smaller LUT (8to32).
+	wc.inputLUT_16to32 = fp.makeInputLUT_16to32()
 
 	fp.progressMsgf("Converting to FPImage format")
 
@@ -226,11 +232,6 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 	im.Stride = fp.srcW * 4
 	nSamples = im.Stride * fp.srcH
 	im.Pix = make([]float32, nSamples)
-
-	// If the underlying type of fp.srcImage is RGBA, we can do some performance
-	// optimization.
-	// TODO: It would be nice if we could optimize YCbCr images in the same way.
-	wc.src_as_RGBA, _ = fp.srcImage.(*image.RGBA)
 
 	workQueue := make(chan srcToFPWorkItem)
 
@@ -260,7 +261,7 @@ func (fp *FPObject) copySrcToFPImage(im *FPImage) error {
 // to:
 //  * target colorspace
 //  * unassociated alpha
-func (fp *FPObject) convertDstFPImage(im *FPImage) {
+func (fp *FPObject) convertFPToFinalFP(im *FPImage) {
 	var i, j int
 
 	if fp.outputCCF == nil {
@@ -285,10 +286,10 @@ func (fp *FPObject) convertDstFPImage(im *FPImage) {
 	}
 }
 
-// im1 is floating point, linear colorspace, unassociated alpha
-// im2 is uint8, target colorspace, unassociated alpha
-// It's okay to modify im1's pixels; it's about to be thrown away.
-func (fp *FPObject) convertDstFPImageToNRGBA_main(im1 *FPImage, im2Pix []uint8, im2Stride int) {
+// src is floating point, linear colorspace, unassociated alpha
+// dst is uint8, target colorspace, unassociated alpha
+// It's okay to modify src's pixels; it's about to be thrown away.
+func (fp *FPObject) convertFPToNRGBA_internal(src *FPImage, dstPix []uint8, dstStride int) {
 	var i, j, k int
 
 	// This table size is optimized for sRGB. The sRGB curve's slope for
@@ -297,8 +298,8 @@ func (fp *FPObject) convertDstFPImageToNRGBA_main(im1 *FPImage, im2Pix []uint8, 
 	// that it includes every possible color value. A size of 255*12.92*3+1 =
 	// 9885 improves precision, and makes the dark colors almost always
 	// round correctly.
-	outputCCTableX_8Size := 9885
-	outputCCTableX_8 := fp.makeOutputCCTableX_8(outputCCTableX_8Size)
+	outputLUT_Xto8_Size := 9885
+	outputLUT_Xto8 := fp.makeOutputLUT_Xto8(outputLUT_Xto8_Size)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to NRGBA format")
@@ -306,55 +307,55 @@ func (fp *FPObject) convertDstFPImageToNRGBA_main(im1 *FPImage, im2Pix []uint8, 
 		fp.progressMsgf("Converting to target colorspace, and NRGBA format")
 	}
 
-	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
-		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
-			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
-			sam2 := im2Pix[j*im2Stride+i*4 : j*im2Stride+i*4+4]
+	for j = 0; j < (src.Rect.Max.Y - src.Rect.Min.Y); j++ {
+		for i = 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
+			srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
+			dstSam := dstPix[j*dstStride+i*4 : j*dstStride+i*4+4]
 
 			// Set the alpha sample
 			if !fp.hasTransparency {
-				sam2[3] = 255
+				dstSam[3] = 255
 			} else {
-				sam2[3] = uint8(sam1[3]*255.0 + 0.5)
+				dstSam[3] = uint8(srcSam[3]*255.0 + 0.5)
 			}
 
 			// Do colorspace conversion if needed.
-			if fp.outputCCF != nil && sam2[3] > 0 {
-				if outputCCTableX_8 != nil {
+			if fp.outputCCF != nil && dstSam[3] > 0 {
+				if outputLUT_Xto8 != nil {
 					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
-						sam2[k] = outputCCTableX_8[int(sam1[k]*float32(outputCCTableX_8Size-1)+0.5)]
+						dstSam[k] = outputLUT_Xto8[int(srcSam[k]*float32(outputLUT_Xto8_Size-1)+0.5)]
 					}
 					continue
 				} else {
 					// Do colorspace conversion the slow way.
-					fp.outputCCF(sam1[0:3])
+					fp.outputCCF(srcSam[0:3])
 				}
 			}
 
 			// Set the non-alpha samples (if we didn't use a lookup table).
 			for k = 0; k < 3; k++ {
-				sam2[k] = uint8(sam1[k]*255.0 + 0.5)
+				dstSam[k] = uint8(srcSam[k]*255.0 + 0.5)
 			}
 		}
 	}
 }
 
-func (fp *FPObject) convertDstFPImageToNRGBA(im1 *FPImage) *image.NRGBA {
-	im2 := image.NewNRGBA(im1.Bounds())
-	fp.convertDstFPImageToNRGBA_main(im1, im2.Pix, im2.Stride)
-	return im2
+func (fp *FPObject) convertFPToNRGBA(src *FPImage) (dst *image.NRGBA) {
+	dst = image.NewNRGBA(src.Bounds())
+	fp.convertFPToNRGBA_internal(src, dst.Pix, dst.Stride)
+	return
 }
 
-func (fp *FPObject) convertDstFPImageToRGBA_main(im1 *FPImage) *image.RGBA {
+func (fp *FPObject) convertFPToRGBA_internal(src *FPImage) (dst *image.RGBA) {
 	var i, j, k int
 
-	im2 := image.NewRGBA(im1.Bounds())
+	dst = image.NewRGBA(src.Bounds())
 
 	// Because we still need to convert to associated alpha after doing color conversion,
 	// the lookup table should return high-precision numbers -- uint8 is not enough.
-	outputCCTableX_32Size := 9885
-	outputCCTableX_32 := fp.makeOutputCCTableX_32(outputCCTableX_32Size)
+	outputLUT_Xto32_Size := 9885
+	outputLUT_Xto32 := fp.makeOutputLUT_Xto32(outputLUT_Xto32_Size)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to RGBA format")
@@ -362,58 +363,57 @@ func (fp *FPObject) convertDstFPImageToRGBA_main(im1 *FPImage) *image.RGBA {
 		fp.progressMsgf("Converting to target colorspace, and RGBA format")
 	}
 
-	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
-		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
-			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
-			sam2 := im2.Pix[j*im2.Stride+i*4 : j*im2.Stride+i*4+4]
+	for j = 0; j < (src.Rect.Max.Y - src.Rect.Min.Y); j++ {
+		for i = 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
+			srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
+			dstSam := dst.Pix[j*dst.Stride+i*4 : j*dst.Stride+i*4+4]
 
 			// Set the alpha sample
 			if !fp.hasTransparency {
-				sam2[3] = 255
+				dstSam[3] = 255
 			} else {
-				sam2[3] = uint8(sam1[3]*255.0 + 0.5)
+				dstSam[3] = uint8(srcSam[3]*255.0 + 0.5)
 			}
 
 			// Do colorspace conversion if needed.
-			if fp.outputCCF != nil && sam2[3] > 0 {
-				if outputCCTableX_32 != nil {
+			if fp.outputCCF != nil && dstSam[3] > 0 {
+				if outputLUT_Xto32 != nil {
 					// Do colorspace conversion using a lookup table.
 					for k = 0; k < 3; k++ {
-						sam1[k] = outputCCTableX_32[int(sam1[k]*float32(outputCCTableX_32Size-1)+0.5)]
+						srcSam[k] = outputLUT_Xto32[int(srcSam[k]*float32(outputLUT_Xto32_Size-1)+0.5)]
 					}
 				} else {
 					// Do colorspace conversion the slow way.
-					fp.outputCCF(sam1[0:3])
+					fp.outputCCF(srcSam[0:3])
 				}
 			}
 
 			// Set the non-alpha samples (converting to associated alpha)
 			for k = 0; k < 3; k++ {
-				sam2[k] = uint8((sam1[k]*sam1[3])*255.0 + 0.5)
+				dstSam[k] = uint8((srcSam[k]*srcSam[3])*255.0 + 0.5)
 			}
 		}
 	}
-
-	return im2
+	return
 }
 
-func (fp *FPObject) convertDstFPImageToRGBA(im1 *FPImage) *image.RGBA {
+func (fp *FPObject) convertFPToRGBA(src *FPImage) (dst *image.RGBA) {
 	if fp.hasTransparency {
-		return fp.convertDstFPImageToRGBA_main(im1)
+		return fp.convertFPToRGBA_internal(src)
 	}
 
-	// If the image has no transparency, use convertDstFPImageToNRGBA_main,
+	// If the image has no transparency, use convertFPToNRGBA_internal,
 	// which is usually somewhat faster.
-	im2 := image.NewRGBA(im1.Bounds())
-	fp.convertDstFPImageToNRGBA_main(im1, im2.Pix, im2.Stride)
-	return im2
+	dst = image.NewRGBA(src.Bounds())
+	fp.convertFPToNRGBA_internal(src, dst.Pix, dst.Stride)
+	return
 }
 
-func (fp *FPObject) convertDstFPImageToNRGBA64(im1 *FPImage) *image.NRGBA64 {
+func (fp *FPObject) convertFPToNRGBA64(src *FPImage) (dst *image.NRGBA64) {
 	var i, j, k int
-	var sam2 [4]uint16
+	var dstSam [4]uint16
 
-	im2 := image.NewNRGBA64(im1.Bounds())
+	dst = image.NewNRGBA64(src.Bounds())
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to NRGBA64 format")
@@ -421,46 +421,45 @@ func (fp *FPObject) convertDstFPImageToNRGBA64(im1 *FPImage) *image.NRGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and NRGBA64 format")
 	}
 
-	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
-		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
-			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
-			data2 := im2.Pix[j*im2.Stride+i*8 : j*im2.Stride+i*8+8]
+	for j = 0; j < (src.Rect.Max.Y - src.Rect.Min.Y); j++ {
+		for i = 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
+			srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
 
 			// Set the alpha sample
 			if !fp.hasTransparency {
-				sam2[3] = 65535
+				dstSam[3] = 65535
 			} else {
-				sam2[3] = uint16(sam1[3]*65535.0 + 0.5)
+				dstSam[3] = uint16(srcSam[3]*65535.0 + 0.5)
 			}
 
 			// Do colorspace conversion if needed.
-			if fp.outputCCF != nil && sam2[3] > 0 {
-				fp.outputCCF(sam1[0:3])
+			if fp.outputCCF != nil && dstSam[3] > 0 {
+				fp.outputCCF(srcSam[0:3])
 			}
 
 			// Calculate the non-alpha samples.
 			for k = 0; k < 3; k++ {
-				sam2[k] = uint16(sam1[k]*65535.0 + 0.5)
+				dstSam[k] = uint16(srcSam[k]*65535.0 + 0.5)
 			}
 
 			// Convert all samples to NRGBA format
+			dstPixelData := dst.Pix[j*dst.Stride+i*8 : j*dst.Stride+i*8+8]
 			for k = 0; k < 4; k++ {
-				data2[k*2] = uint8(sam2[k] >> 8)
-				data2[k*2+1] = uint8(sam2[k] & 0xff)
+				dstPixelData[k*2] = uint8(dstSam[k] >> 8)
+				dstPixelData[k*2+1] = uint8(dstSam[k] & 0xff)
 			}
 		}
 	}
-
-	return im2
+	return
 }
 
 // TODO: If we are not going to use lookup tables to speed up color correction,
-// this function and convertDstFPImageToNRGBA64 could be merged.
-func (fp *FPObject) convertDstFPImageToRGBA64(im1 *FPImage) *image.RGBA64 {
+// this function and convertFPToNRGBA64 could be merged.
+func (fp *FPObject) convertFPToRGBA64(src *FPImage) (dst *image.RGBA64) {
 	var i, j, k int
-	var sam2 [4]uint16
+	var dstSam [4]uint16
 
-	im2 := image.NewRGBA64(im1.Bounds())
+	dst = image.NewRGBA64(src.Bounds())
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to RGBA64 format")
@@ -468,35 +467,34 @@ func (fp *FPObject) convertDstFPImageToRGBA64(im1 *FPImage) *image.RGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and RGBA64 format")
 	}
 
-	for j = 0; j < (im1.Rect.Max.Y - im1.Rect.Min.Y); j++ {
-		for i = 0; i < (im1.Rect.Max.X - im1.Rect.Min.X); i++ {
-			sam1 := im1.Pix[j*im1.Stride+i*4 : j*im1.Stride+i*4+4]
-			data2 := im2.Pix[j*im2.Stride+i*8 : j*im2.Stride+i*8+8]
+	for j = 0; j < (src.Rect.Max.Y - src.Rect.Min.Y); j++ {
+		for i = 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
+			srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
 
 			// Set the alpha sample
 			if !fp.hasTransparency {
-				sam2[3] = 65535
+				dstSam[3] = 65535
 			} else {
-				sam2[3] = uint16(sam1[3]*65535.0 + 0.5)
+				dstSam[3] = uint16(srcSam[3]*65535.0 + 0.5)
 			}
 
 			// Do colorspace conversion if needed.
-			if fp.outputCCF != nil && sam2[3] > 0 {
-				fp.outputCCF(sam1[0:3])
+			if fp.outputCCF != nil && dstSam[3] > 0 {
+				fp.outputCCF(srcSam[0:3])
 			}
 
 			// Calculate the non-alpha samples.
 			for k = 0; k < 3; k++ {
-				sam2[k] = uint16((sam1[k]*sam1[3])*65535.0 + 0.5)
+				dstSam[k] = uint16((srcSam[k]*srcSam[3])*65535.0 + 0.5)
 			}
 
 			// Convert all samples to NRGBA format
+			dstPixelData := dst.Pix[j*dst.Stride+i*8 : j*dst.Stride+i*8+8]
 			for k = 0; k < 4; k++ {
-				data2[k*2] = uint8(sam2[k] >> 8)
-				data2[k*2+1] = uint8(sam2[k] & 0xff)
+				dstPixelData[k*2] = uint8(dstSam[k] >> 8)
+				dstPixelData[k*2+1] = uint8(dstSam[k] & 0xff)
 			}
 		}
 	}
-
-	return im2
+	return
 }
