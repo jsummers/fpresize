@@ -114,22 +114,15 @@ type srcToFPWorkItem struct {
 	stopNow bool
 }
 
-// Convert row j from fp.srcImage (or wc.src_AsRGBA if available)
-// to wc.dst.
+// Convert row j from fp.srcImage to wc.dst.
 func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 	var srcSam16 [4]uint32 // Source RGBA samples (uint16 stored in uint32)
 	var k int
 
 	for i := 0; i < fp.srcW; i++ {
 		// Read a pixel from the source image, into uint16 samples
-		if wc.src_AsRGBA != nil {
-			for k = 0; k < 4; k++ {
-				srcSam16[k] = uint32(wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i+k]) * 257
-			}
-		} else {
-			srcclr := fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
-			srcSam16[0], srcSam16[1], srcSam16[2], srcSam16[3] = srcclr.RGBA()
-		}
+		srcclr := fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
+		srcSam16[0], srcSam16[1], srcSam16[2], srcSam16[3] = srcclr.RGBA()
 
 		if srcSam16[3] < 65535 {
 			fp.hasTransparency = true
@@ -237,6 +230,69 @@ func (fp *FPObject) convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
 	}
 }
 
+// Convert row j from wc.src_AsRGBA to wc.dst.
+// This is an optimized version of convertSrcToFP_row().
+func (fp *FPObject) convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
+	var k int
+
+	for i := 0; i < fp.srcW; i++ {
+		var srcSam8 []uint8
+		srcSam8 = wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i : wc.src_AsRGBA.Stride*j+4*i+4]
+
+		if srcSam8[3] < 255 {
+			fp.hasTransparency = true
+
+			if srcSam8[3] == 0 {
+				// No need to do anything if the pixel is fully transparent.
+				continue
+			}
+		}
+
+		// Identify the slice of samples representing this pixel in the
+		// converted image.
+		dstSam := wc.dst.Pix[j*wc.dst.Stride+4*i : j*wc.dst.Stride+4*i+4]
+
+		// Convert to floating point
+		for k = 0; k < 4; k++ {
+			dstSam[k] = float32(srcSam8[k]) / 255.0
+		}
+
+		if fp.inputCCF == nil {
+			// If not doing color correction, we're done.
+			continue
+		}
+
+		if srcSam8[3] == 255 { // If pixel is opaque...
+			if wc.inputLUT_8to32 != nil {
+				// Convert to linear color, using a lookup table.
+				for k = 0; k < 3; k++ {
+					dstSam[k] = wc.inputLUT_8to32[srcSam8[k]]
+				}
+			} else {
+				// Convert to linear color, without a lookup table.
+				fp.inputCCF(dstSam[0:3])
+			}
+			continue
+		}
+
+		// Pixel is partially transparent.
+
+		// Convert to unassociated alpha, so we can do color correction.
+		for k = 0; k < 3; k++ {
+			dstSam[k] /= dstSam[3]
+		}
+
+		// Do color correction.
+		// (Don't use a lookup table; it doesn't have enough precision in this case.)
+		fp.inputCCF(dstSam[0:3])
+
+		// Convert back to associated alpha
+		for k = 0; k < 3; k++ {
+			dstSam[k] *= dstSam[3]
+		}
+	}
+}
+
 func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFPWorkItem) {
 	for {
 		wi := <-workQueue
@@ -246,6 +302,8 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 
 		if wc.src_AsNRGBA != nil {
 			fp.convertSrcToFP_row_NRGBA(wc, wi.j)
+		} else if wc.src_AsRGBA != nil {
+			fp.convertSrcToFP_row_RGBA(wc, wi.j)
 		} else {
 			fp.convertSrcToFP_row(wc, wi.j)
 		}
@@ -272,7 +330,7 @@ func (fp *FPObject) convertSrcToFP(dst *FPImage) error {
 	wc.src_AsRGBA, _ = fp.srcImage.(*image.RGBA)
 	wc.src_AsNRGBA, _ = fp.srcImage.(*image.NRGBA)
 
-	if wc.src_AsNRGBA != nil {
+	if wc.src_AsRGBA != nil || wc.src_AsNRGBA != nil {
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else {
 		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
