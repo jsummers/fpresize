@@ -102,9 +102,11 @@ func (fp *FPObject) makeOutputLUT_Xto32(tableSize int) []float32 {
 
 // Data that is constant for all workers.
 type srcToFPWorkContext struct {
+	inputLUT_8to32  []float32
 	inputLUT_16to32 []float32
 	dst             *FPImage
 	src_AsRGBA      *image.RGBA
+	src_AsNRGBA     *image.NRGBA
 }
 
 type srcToFPWorkItem struct {
@@ -112,7 +114,7 @@ type srcToFPWorkItem struct {
 	stopNow bool
 }
 
-// Convert from fp.srcImage (or wc.src_AsRGBA if available)
+// Convert row j from fp.srcImage (or wc.src_AsRGBA if available)
 // to wc.dst.
 func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 	var srcSam16 [4]uint32 // Source RGBA samples (uint16 stored in uint32)
@@ -186,6 +188,55 @@ func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 	}
 }
 
+// Convert row j from wc.src_AsNRGBA to wc.dst.
+// This is an optimized version of convertSrcToFP_row().
+func (fp *FPObject) convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
+	var k int
+
+	for i := 0; i < fp.srcW; i++ {
+		var srcSam8 []uint8
+		srcSam8 = wc.src_AsNRGBA.Pix[wc.src_AsNRGBA.Stride*j+4*i : wc.src_AsNRGBA.Stride*j+4*i+4]
+
+		if srcSam8[3] < 255 {
+			fp.hasTransparency = true
+
+			if srcSam8[3] == 0 {
+				// No need to do anything if the pixel is fully transparent.
+				continue
+			}
+		}
+
+		// Identify the slice of samples representing this pixel in the
+		// converted image.
+		dstSam := wc.dst.Pix[j*wc.dst.Stride+4*i : j*wc.dst.Stride+4*i+4]
+
+		// Convert to floating point
+		for k = 0; k < 4; k++ {
+			dstSam[k] = float32(srcSam8[k]) / 255.0
+		}
+
+		// Do color correction, if necessary
+		if fp.inputCCF != nil {
+			if wc.inputLUT_8to32 != nil {
+				// Convert to linear color, using a lookup table.
+				for k = 0; k < 3; k++ {
+					dstSam[k] = wc.inputLUT_8to32[srcSam8[k]]
+				}
+			} else {
+				// Convert to linear color, without a lookup table.
+				fp.inputCCF(dstSam[0:3])
+			}
+		}
+
+		// Convert to associated alpha, if not fully opaque
+		if srcSam8[3] != 255 {
+			for k = 0; k < 3; k++ {
+				dstSam[k] *= dstSam[3]
+			}
+		}
+	}
+}
+
 func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFPWorkItem) {
 	for {
 		wi := <-workQueue
@@ -193,7 +244,11 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 			return
 		}
 
-		fp.convertSrcToFP_row(wc, wi.j)
+		if wc.src_AsNRGBA != nil {
+			fp.convertSrcToFP_row_NRGBA(wc, wi.j)
+		} else {
+			fp.convertSrcToFP_row(wc, wi.j)
+		}
 	}
 }
 
@@ -211,13 +266,17 @@ func (fp *FPObject) convertSrcToFP(dst *FPImage) error {
 	wc := new(srcToFPWorkContext)
 	wc.dst = dst
 
-	// If the underlying type of fp.srcImage is RGBA, we can do some performance
-	// optimization.
+	// If the underlying type of fp.srcImage is RGBA or NRGBA, we can do some
+	// performance optimization.
 	// TODO: It would be nice if we could optimize YCbCr images in the same way.
 	wc.src_AsRGBA, _ = fp.srcImage.(*image.RGBA)
+	wc.src_AsNRGBA, _ = fp.srcImage.(*image.NRGBA)
 
-	// TODO: If wc.src_AsRGBA!=nil, we could use a smaller LUT (8to32).
-	wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
+	if wc.src_AsNRGBA != nil {
+		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
+	} else {
+		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
+	}
 
 	fp.progressMsgf("Converting to FPImage format")
 

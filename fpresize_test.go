@@ -43,6 +43,6 @@ func TestOne(t *testing.T) {
 		t.FailNow()
 	}
 
-	checkPixel(t, "test1", dst, 50, 54, 23662, 22361, 22141, 43098)
-	checkPixel(t, "test2", dst, 43, 48, 9654, 8358, 10530, 38876)
+	checkPixel(t, "test1", dst, 50, 54, 23663, 22361, 22142, 43098)
+	checkPixel(t, "test2", dst, 43, 48, 9654, 8358, 10531, 38876)
 }
