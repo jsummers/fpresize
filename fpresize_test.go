@@ -12,6 +12,7 @@ import "bytes"
 import "io/ioutil"
 import "runtime"
 import "image"
+import "image/draw"
 import "image/png"
 import _ "image/jpeg"
 
@@ -88,6 +89,20 @@ func compareFiles(t *testing.T, expectedFN string, actualFN string) {
 	}
 }
 
+// We need to test RGBA source images with transparency, because we
+// have an optimized code path for that. But there's no obvious way to make
+// image.Decode() create such an image, so we use this function to convert
+// an image to RGBA format.
+func convertToRGBA(t *testing.T, src image.Image) *image.RGBA {
+	var dst *image.RGBA
+	var bounds image.Rectangle
+
+	bounds = src.Bounds()
+	dst = image.NewRGBA(bounds)
+	draw.Draw(dst, bounds, src, image.ZP, draw.Src)
+	return dst
+}
+
 func runFileTest(t *testing.T, opts *testOptions) {
 	var src image.Image
 	var dst image.Image
@@ -96,6 +111,10 @@ func runFileTest(t *testing.T, opts *testOptions) {
 
 	fp := new(FPObject)
 	src = readImageFromFile(t, opts.srcImgDir+opts.infn)
+
+	if opts.convertToRGBA {
+		src = convertToRGBA(t, src)
+	}
 
 	fp.SetSourceImage(src)
 	if opts.advancedBounds {
@@ -165,6 +184,7 @@ type testOptions struct {
 
 	disableInputGamma  bool
 	disableOutputGamma bool
+	convertToRGBA      bool
 }
 
 const (
@@ -193,6 +213,7 @@ func resetOpts(opts *testOptions) {
 	opts.outFmt = outFmtNRGBA
 	opts.disableInputGamma = false
 	opts.disableOutputGamma = false
+	opts.convertToRGBA = false
 }
 
 func TestMain(t *testing.T) {
@@ -342,5 +363,13 @@ func TestMain(t *testing.T) {
 	opts.bounds.Min.Y = 11
 	opts.bounds.Max.X = 31
 	opts.bounds.Max.Y = 33
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test15.png"
+	opts.infn = "rgb8a.png"
+	opts.bounds.Max.X = 17
+	opts.bounds.Max.Y = 18
+	opts.convertToRGBA = true
 	runFileTest(t, opts)
 }
