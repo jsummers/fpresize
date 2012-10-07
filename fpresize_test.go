@@ -10,6 +10,7 @@ import "fmt"
 import "os"
 import "bytes"
 import "io/ioutil"
+import "runtime"
 import "image"
 import "image/png"
 
@@ -86,15 +87,6 @@ func compareFiles(t *testing.T, expectedFN string, actualFN string) {
 	}
 }
 
-type testOptions struct {
-	srcImgDir   string
-	actualDir   string
-	expectedDir string
-	infn        string
-	outfn       string
-	dstH, dstW  int
-}
-
 func runFileTest(t *testing.T, opts *testOptions) {
 	var src image.Image
 	var dst image.Image
@@ -104,7 +96,15 @@ func runFileTest(t *testing.T, opts *testOptions) {
 	src = readImageFromFile(t, opts.srcImgDir+opts.infn)
 
 	fp.SetSourceImage(src)
-	fp.SetTargetBounds(image.Rect(0, 0, opts.dstW, opts.dstH))
+	if opts.advancedBounds {
+		fp.SetTargetBoundsAdvanced(opts.bounds, opts.adv_x1, opts.adv_y1, opts.adv_x2, opts.adv_y2)
+	} else {
+		fp.SetTargetBounds(opts.bounds)
+	}
+
+	if opts.filter != nil {
+		fp.SetFilter(opts.filter)
+	}
 
 	dst, err = fp.ResizeToNRGBA()
 	if err != nil {
@@ -119,7 +119,34 @@ func runFileTest(t *testing.T, opts *testOptions) {
 	compareFiles(t, opts.expectedDir+opts.outfn, opts.actualDir+opts.outfn)
 }
 
-func TestTwo(t *testing.T) {
+type testOptions struct {
+	srcImgDir   string
+	actualDir   string
+	expectedDir string
+	infn        string
+	outfn       string
+	bounds      image.Rectangle
+	filter      *Filter
+
+	advancedBounds bool
+	adv_x1, adv_y1 float64
+	adv_x2, adv_y2 float64
+}
+
+func resetOpts(opts *testOptions) {
+	opts.infn = ""
+	opts.outfn = ""
+	opts.bounds.Min.X = 0
+	opts.bounds.Min.Y = 0
+	opts.bounds.Max.X = 19
+	opts.bounds.Max.Y = 19
+	opts.filter = nil
+	opts.advancedBounds = false
+}
+
+func TestMain(t *testing.T) {
+	runtime.GOMAXPROCS(3)
+
 	opts := new(testOptions)
 
 	// These tests assume that "go test" sets the current directory to the projects'
@@ -128,21 +155,37 @@ func TestTwo(t *testing.T) {
 	opts.actualDir = fmt.Sprintf("testdata%cactual%c", os.PathSeparator, os.PathSeparator)
 	opts.expectedDir = fmt.Sprintf("testdata%cexpected%c", os.PathSeparator, os.PathSeparator)
 
+	resetOpts(opts)
 	opts.outfn = "test1.png"
 	opts.infn = "rgb8a.png"
-	opts.dstW = 20
-	opts.dstH = 18
+	opts.bounds.Max.X = 20
+	opts.bounds.Max.Y = 18
 	runFileTest(t, opts)
 
+	resetOpts(opts)
 	opts.outfn = "test2.png"
 	opts.infn = "rgb8.png"
-	opts.dstW = 29
-	opts.dstH = 28
+	opts.bounds.Max.X = 29
+	opts.bounds.Max.Y = 28
 	runFileTest(t, opts)
 
+	resetOpts(opts)
 	opts.outfn = "test3.png"
 	opts.infn = "rgb16a.png"
-	opts.dstW = 17
-	opts.dstH = 17
+	opts.bounds.Max.X = 17
+	opts.bounds.Max.Y = 17
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test4.png"
+	opts.infn = "rgb8.png"
+	opts.bounds.Max.X = 21
+	opts.bounds.Max.Y = 22
+	opts.advancedBounds = true
+	opts.adv_x1 = 0.5
+	opts.adv_y1 = 2.0
+	opts.adv_x2 = 20.5
+	opts.adv_y2 = 21.0
+	opts.filter = MakeLanczosFilter(4)
 	runFileTest(t, opts)
 }
