@@ -377,6 +377,56 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	return
 }
 
+func (fp *FPObject) postProcessImage_row(im *FPImage, j int) {
+	var k int
+
+	for i := 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
+		rp := j*im.Stride + i*4 // index of the Red sample in im.Pix
+		ap := rp + 3            // index of the alpha sample
+
+		if !fp.hasTransparency {
+			// This image is known to have no transparency. Set alpha to 1,
+			// and clamp the other samples to [0,1]
+			im.Pix[ap] = 1.0
+			for k = 0; k < 3; k++ {
+				if im.Pix[rp+k] < 0.0 {
+					im.Pix[rp+k] = 0.0
+				} else if im.Pix[rp+k] > 1.0 {
+					im.Pix[rp+k] = 1.0
+				}
+			}
+			continue
+		} else if im.Pix[ap] <= 0.0 {
+			// A fully transparent pixel
+			for k = 0; k < 4; k++ {
+				im.Pix[rp+k] = 0.0
+			}
+			continue
+		}
+
+		// With some filters, it is possible to end up with an alpha value larger
+		// than 1. If that happens, it makes a difference whether we clamp the
+		// samples to valid values before, or after converting to unassociated alpha.
+		// I don't know which is better. The current code converts first, then clamps.
+
+		// Convert to unassociated alpha
+		if im.Pix[ap] != 1.0 {
+			for k = 0; k < 3; k++ {
+				im.Pix[rp+k] /= im.Pix[ap]
+			}
+		}
+
+		// Clamp to [0,1]
+		for k = 0; k < 4; k++ {
+			if im.Pix[rp+k] < 0.0 {
+				im.Pix[rp+k] = 0.0
+			} else if im.Pix[rp+k] > 1.0 {
+				im.Pix[rp+k] = 1.0
+			}
+		}
+	}
+}
+
 // Take an image fresh from resizeWidth/resizeHeight
 //  * associated alpha, linear colorspace, alpha samples may not be valid
 // Convert to 
@@ -392,54 +442,8 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 // correction is disabled, and the final image format uses associated alpha.
 // We deem that to be not worth optimizing for.
 func (fp *FPObject) postProcessImage(im *FPImage) {
-	var k int
-
 	for j := 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
-		for i := 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
-			rp := j*im.Stride + i*4 // index of the Red sample in im.Pix
-			ap := rp + 3            // index of the alpha sample
-
-			if !fp.hasTransparency {
-				// This image is known to have no transparency. Set alpha to 1,
-				// and clamp the other samples to [0,1]
-				im.Pix[ap] = 1.0
-				for k = 0; k < 3; k++ {
-					if im.Pix[rp+k] < 0.0 {
-						im.Pix[rp+k] = 0.0
-					} else if im.Pix[rp+k] > 1.0 {
-						im.Pix[rp+k] = 1.0
-					}
-				}
-				continue
-			} else if im.Pix[ap] <= 0.0 {
-				// A fully transparent pixel
-				for k = 0; k < 4; k++ {
-					im.Pix[rp+k] = 0.0
-				}
-				continue
-			}
-
-			// With some filters, it is possible to end up with an alpha value larger
-			// than 1. If that happens, it makes a difference whether we clamp the
-			// samples to valid values before, or after converting to unassociated alpha.
-			// I don't know which is better. The current code converts first, then clamps.
-
-			// Convert to unassociated alpha
-			if im.Pix[ap] != 1.0 {
-				for k = 0; k < 3; k++ {
-					im.Pix[rp+k] /= im.Pix[ap]
-				}
-			}
-
-			// Clamp to [0,1]
-			for k = 0; k < 4; k++ {
-				if im.Pix[rp+k] < 0.0 {
-					im.Pix[rp+k] = 0.0
-				} else if im.Pix[rp+k] > 1.0 {
-					im.Pix[rp+k] = 1.0
-				}
-			}
-		}
+		fp.postProcessImage_row(im, j)
 	}
 }
 
