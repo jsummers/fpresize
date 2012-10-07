@@ -16,7 +16,7 @@ To build the example utility, type:
     go install github.com/jsummers/fpresize/examples/fpr
 
 The `fpr` program should appear at `GOPATH/bin/fpr`, where `GOPATH`
-is the first path in your `GOPATH`  environment variables.
+is the first path in your `GOPATH` environment variables.
 
 
 Documentation
@@ -34,11 +34,12 @@ Or, after installing, type:
 Other information
 -----------------
 
-Fpresize is almost feature-complete. I will try not to break
-backward-compatibility without a really good reason.
+I consider the API to be stable, and will try not to break
+backward-compatibility without good reason.
 
-Future plans include better automated testing, and performance
-improvements.
+New features may be added in the future, but none are specifically
+planned. There is room to improve the performance (though it is very
+fast in most cases), documentation, code quality, and test suite.
 
 Parts of fpresize are based on my from my C library,
 [ImageWorsener](http://entropymine.com/imageworsener/).

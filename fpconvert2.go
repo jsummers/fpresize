@@ -132,11 +132,15 @@ func (fp *FPObject) postProcessImage_row(im *FPImage, j int) {
 	}
 }
 
+type cvtOutputRowFunc func(cctx *cvtFromFPContext, j int)
+
 // Miscellaneous contextual data that is used internaly by the varioius
 // conversion functions.
 type cvtFromFPContext struct {
 	fp  *FPObject
 	src *FPImage
+
+	cvtRowFn cvtOutputRowFunc
 
 	dstPix    []uint8
 	dstStride int
@@ -151,11 +155,42 @@ type cvtFromFPContext struct {
 	outputLUT_Xto32      []float32
 }
 
-type cvtOutputRowFunc func(cctx *cvtFromFPContext, j int)
+type toOutputWorkItem struct {
+	j       int
+	stopNow bool
+}
 
-func (fp *FPObject) convertOutputImageIndirect(cvtFn cvtOutputRowFunc, cctx *cvtFromFPContext) {
-	for j := 0; j < (cctx.src.Rect.Max.Y - cctx.src.Rect.Min.Y); j++ {
-		cvtFn(cctx, j)
+func (fp *FPObject) toOutputWorker(cctx *cvtFromFPContext, workQueue chan toOutputWorkItem) {
+	for {
+		wi := <-workQueue
+		if wi.stopNow {
+			return
+		}
+
+		cctx.cvtRowFn(cctx, wi.j)
+	}
+}
+
+func (fp *FPObject) convertOutputImageIndirect(cctx *cvtFromFPContext) {
+	var i, j int
+	var wi toOutputWorkItem
+
+	workQueue := make(chan toOutputWorkItem)
+
+	for i = 0; i < fp.numWorkers; i++ {
+		go fp.toOutputWorker(cctx, workQueue)
+	}
+
+	// Each row is a "work item". Send each row to a worker.
+	for j = 0; j < (cctx.src.Rect.Max.Y - cctx.src.Rect.Min.Y); j++ {
+		wi.j = j
+		workQueue <- wi
+	}
+
+	// Send out a "stop work" order.
+	wi.stopNow = true
+	for i = 0; i < fp.numWorkers; i++ {
+		workQueue <- wi
 	}
 }
 
@@ -197,7 +232,8 @@ func (fp *FPObject) convertFPToFinalFP(im *FPImage) {
 		fp.progressMsgf("Converting to target colorspace")
 	}
 
-	fp.convertOutputImageIndirect(convertFPToFinalFP_row, cctx)
+	cctx.cvtRowFn = convertFPToFinalFP_row
+	fp.convertOutputImageIndirect(cctx)
 }
 
 func convertFPToNRGBA_row(cctx *cvtFromFPContext, j int) {
@@ -262,7 +298,8 @@ func (fp *FPObject) convertFPToNRGBA_internal(src *FPImage, dstPix []uint8, dstS
 		fp.progressMsgf("Converting to target colorspace, and NRGBA format")
 	}
 
-	fp.convertOutputImageIndirect(convertFPToNRGBA_row, cctx)
+	cctx.cvtRowFn = convertFPToNRGBA_row
+	fp.convertOutputImageIndirect(cctx)
 }
 
 func (fp *FPObject) convertFPToNRGBA(src *FPImage) (dst *image.NRGBA) {
@@ -324,7 +361,8 @@ func (fp *FPObject) convertFPToRGBA_internal(src *FPImage) *image.RGBA {
 		fp.progressMsgf("Converting to target colorspace, and RGBA format")
 	}
 
-	fp.convertOutputImageIndirect(convertFPToRGBA_row, cctx)
+	cctx.cvtRowFn = convertFPToRGBA_row
+	fp.convertOutputImageIndirect(cctx)
 	return cctx.dstRGBA
 }
 
@@ -387,7 +425,8 @@ func (fp *FPObject) convertFPToNRGBA64(src *FPImage) *image.NRGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and NRGBA64 format")
 	}
 
-	fp.convertOutputImageIndirect(convertFPToNRGBA64_row, cctx)
+	cctx.cvtRowFn = convertFPToNRGBA64_row
+	fp.convertOutputImageIndirect(cctx)
 	return cctx.dstNRGBA64
 }
 
@@ -440,6 +479,7 @@ func (fp *FPObject) convertFPToRGBA64(src *FPImage) *image.RGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and RGBA64 format")
 	}
 
-	fp.convertOutputImageIndirect(convertFPToRGBA64_row, cctx)
+	cctx.cvtRowFn = convertFPToRGBA64_row
+	fp.convertOutputImageIndirect(cctx)
 	return cctx.dstRGBA64
 }
