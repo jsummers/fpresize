@@ -377,6 +377,16 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	return
 }
 
+// Take a row fresh from resizeWidth/resizeHeight
+//  * associated alpha, linear colorspace, alpha samples may not be valid
+// Convert to 
+//  * unassociated alpha, linear colorspace, alpha samples always valid,
+//    all samples clamped to [0,1].
+//
+// It is possible that we will convert to unassociated alpha needlessly, only
+// to convert right back to associated alpha. That will happen if color
+// correction is disabled, and the final image format uses associated alpha.
+// We may optimize for that case in a future version.
 func (fp *FPObject) postProcessImage_row(im *FPImage, j int) {
 	var k int
 
@@ -424,26 +434,6 @@ func (fp *FPObject) postProcessImage_row(im *FPImage, j int) {
 				im.Pix[rp+k] = 1.0
 			}
 		}
-	}
-}
-
-// Take an image fresh from resizeWidth/resizeHeight
-//  * associated alpha, linear colorspace, alpha samples may not be valid
-// Convert to 
-//  * unassociated alpha, linear colorspace, alpha samples always valid,
-//    all samples clamped to [0,1].
-//
-// This extra pass over the image may seem wasteful, but it helps to keep the
-// code clean. The image data will be handed to one of several routines after
-// this, so this helps to prevent duplication of some tedious code.
-//
-// It is possible that we will convert to unassociated alpha needlessly, only
-// to convert right back to associated alpha. That will happen if color
-// correction is disabled, and the final image format uses associated alpha.
-// We deem that to be not worth optimizing for.
-func (fp *FPObject) postProcessImage(im *FPImage) {
-	for j := 0; j < (im.Rect.Max.Y - im.Rect.Min.Y); j++ {
-		fp.postProcessImage_row(im, j)
 	}
 }
 
@@ -674,9 +664,6 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 		intermedFPImage = fp.resizeWidth(fp.srcFPImage)
 		dstFPImage = fp.resizeHeight(intermedFPImage)
 	}
-
-	fp.progressMsgf("Post-processing image")
-	fp.postProcessImage(dstFPImage)
 
 	dstFPImage.Rect = fp.dstBounds
 

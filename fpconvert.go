@@ -388,6 +388,12 @@ type cvtFromFPContext struct {
 }
 
 func (fp *FPObject) convertFPToFinalFP_row(im *FPImage, j int) {
+
+	fp.postProcessImage_row(im, j)
+	if fp.outputCCF == nil {
+		return
+	}
+
 	for i := 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
 		// Identify the slice of samples representing the pixel we're updating.
 		sam := im.Pix[j*im.Stride+i*4 : j*im.Stride+i*4+4]
@@ -409,9 +415,6 @@ func (fp *FPObject) convertFPToFinalFP_row(im *FPImage, j int) {
 //  * target colorspace
 //  * unassociated alpha
 func (fp *FPObject) convertFPToFinalFP(im *FPImage) {
-	if fp.outputCCF == nil {
-		return
-	}
 
 	fp.progressMsgf("Converting to target colorspace")
 
@@ -422,6 +425,8 @@ func (fp *FPObject) convertFPToFinalFP(im *FPImage) {
 
 func (fp *FPObject) convertFPToNRGBA_row(src *FPImage, cctx *cvtFromFPContext, j int) {
 	var k int
+
+	fp.postProcessImage_row(src, j)
 
 	for i := 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
 		srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
@@ -493,6 +498,8 @@ func (fp *FPObject) convertFPToNRGBA(src *FPImage) (dst *image.NRGBA) {
 func (fp *FPObject) convertFPToRGBA_row(src *FPImage, cctx *cvtFromFPContext, j int) {
 	var k int
 
+	fp.postProcessImage_row(src, j)
+
 	for i := 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
 		srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
 		dstSam := cctx.dstRGBA.Pix[j*cctx.dstRGBA.Stride+i*4 : j*cctx.dstRGBA.Stride+i*4+4]
@@ -562,6 +569,8 @@ func (fp *FPObject) convertFPToNRGBA64_row(src *FPImage, cctx *cvtFromFPContext,
 	var dstSam [4]uint16
 	var k int
 
+	fp.postProcessImage_row(src, j)
+
 	for i := 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
 		srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
 
@@ -610,6 +619,8 @@ func (fp *FPObject) convertFPToNRGBA64(src *FPImage) *image.NRGBA64 {
 func (fp *FPObject) convertFPToRGBA64_row(src *FPImage, cctx *cvtFromFPContext, j int) {
 	var dstSam [4]uint16
 	var k int
+
+	fp.postProcessImage_row(src, j)
 
 	for i := 0; i < (src.Rect.Max.X - src.Rect.Min.X); i++ {
 		srcSam := src.Pix[j*src.Stride+i*4 : j*src.Stride+i*4+4]
