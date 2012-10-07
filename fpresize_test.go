@@ -13,6 +13,7 @@ import "io/ioutil"
 import "runtime"
 import "image"
 import "image/png"
+import _ "image/jpeg"
 
 func readImageFromFile(t *testing.T, srcFilename string) image.Image {
 	var err error
@@ -90,6 +91,7 @@ func compareFiles(t *testing.T, expectedFN string, actualFN string) {
 func runFileTest(t *testing.T, opts *testOptions) {
 	var src image.Image
 	var dst image.Image
+	var dstBounds image.Rectangle
 	var err error
 
 	fp := new(FPObject)
@@ -105,11 +107,38 @@ func runFileTest(t *testing.T, opts *testOptions) {
 	if opts.filter != nil {
 		fp.SetFilter(opts.filter)
 	}
+	if opts.blur > 0.0 {
+		fp.SetBlur(opts.blur)
+	}
 
-	dst, err = fp.ResizeToNRGBA()
+	if opts.disableInputGamma {
+		fp.SetInputColorConverter(nil)
+	}
+	if opts.disableOutputGamma {
+		fp.SetOutputColorConverter(nil)
+	}
+
+	switch opts.outFmt {
+	case outFmtFP:
+		dst, err = fp.Resize()
+	case outFmtRGBA:
+		dst, err = fp.ResizeToRGBA()
+	case outFmtRGBA64:
+		dst, err = fp.ResizeToRGBA64()
+	case outFmtNRGBA64:
+		dst, err = fp.ResizeToNRGBA64()
+	default:
+		dst, err = fp.ResizeToNRGBA()
+	}
 	if err != nil {
 		t.Logf("%s\n", err.Error())
 		t.FailNow()
+	}
+
+	dstBounds = dst.Bounds()
+	if dstBounds != opts.bounds {
+		t.Logf("%s: incorrect bounds %v, expected %v", opts.outfn, dstBounds, opts.bounds)
+		t.Fail()
 	}
 
 	writeImageToFile(t, dst, opts.actualDir+opts.outfn)
@@ -127,11 +156,29 @@ type testOptions struct {
 	outfn       string
 	bounds      image.Rectangle
 	filter      *Filter
+	blur        float64
 
 	advancedBounds bool
 	adv_x1, adv_y1 float64
 	adv_x2, adv_y2 float64
+	outFmt         int
+
+	disableInputGamma  bool
+	disableOutputGamma bool
 }
+
+const (
+	outFmtFP      = iota
+	outFmtRGBA    = iota
+	outFmtNRGBA   = iota
+	outFmtRGBA64  = iota
+	outFmtNRGBA64 = iota
+)
+
+const (
+	ffPNG  = 1
+	ffJPEG = 2
+)
 
 func resetOpts(opts *testOptions) {
 	opts.infn = ""
@@ -141,7 +188,11 @@ func resetOpts(opts *testOptions) {
 	opts.bounds.Max.X = 19
 	opts.bounds.Max.Y = 19
 	opts.filter = nil
+	opts.blur = -1.0
 	opts.advancedBounds = false
+	opts.outFmt = outFmtNRGBA
+	opts.disableInputGamma = false
+	opts.disableOutputGamma = false
 }
 
 func TestMain(t *testing.T) {
@@ -187,5 +238,109 @@ func TestMain(t *testing.T) {
 	opts.adv_x2 = 20.5
 	opts.adv_y2 = 21.0
 	opts.filter = MakeLanczosFilter(4)
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test5.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 18
+	opts.bounds.Max.Y = 18
+	opts.filter = MakeCubicFilter(1.0/3.0, 1.0/3.0)
+	opts.outFmt = outFmtFP
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test6.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 18
+	opts.bounds.Max.Y = 18
+	opts.filter = MakeTriangleFilter()
+	opts.outFmt = outFmtRGBA
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test7.png"
+	opts.infn = "rgb8a.png"
+	opts.bounds.Max.X = 18
+	opts.bounds.Max.Y = 18
+	opts.filter = MakePixelMixingFilter()
+	opts.outFmt = outFmtRGBA64
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test8.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 18
+	opts.bounds.Max.Y = 18
+	opts.filter = MakeGaussianFilter()
+	opts.outFmt = outFmtNRGBA64
+	runFileTest(t, opts)
+
+	// --- Tests without gamma correction
+	resetOpts(opts)
+	opts.outfn = "test9.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 17
+	opts.bounds.Max.Y = 17
+	opts.filter = MakeCubicFilter(0.0, 0.5)
+	opts.disableInputGamma = true
+	opts.disableOutputGamma = true
+	opts.outFmt = outFmtFP
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test10.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 17
+	opts.bounds.Max.Y = 17
+	opts.filter = MakeCubicFilter(0.0, 1.0)
+	opts.disableInputGamma = true
+	opts.disableOutputGamma = true
+	opts.outFmt = outFmtRGBA
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test11.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 17
+	opts.bounds.Max.Y = 17
+	opts.filter = MakeCubicFilter(0.0, 0.0)
+	opts.disableInputGamma = true
+	opts.disableOutputGamma = true
+	opts.outFmt = outFmtNRGBA
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test12.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 17
+	opts.bounds.Max.Y = 17
+	opts.filter = MakeLanczosFilter(3)
+	opts.blur = 1.7
+	opts.disableInputGamma = true
+	opts.disableOutputGamma = true
+	opts.outFmt = outFmtRGBA64
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test13.png"
+	opts.infn = "rgb16a.png"
+	opts.bounds.Max.X = 17
+	opts.bounds.Max.Y = 17
+	opts.filter = MakeBoxAvgFilter()
+	opts.blur = 2.5
+	opts.disableInputGamma = true
+	opts.disableOutputGamma = true
+	opts.outFmt = outFmtNRGBA64
+	runFileTest(t, opts)
+	// ---
+
+	resetOpts(opts)
+	opts.outfn = "test14.png"
+	opts.infn = "rgb8.jpg"
+	opts.bounds.Min.X = 10
+	opts.bounds.Min.Y = 11
+	opts.bounds.Max.X = 31
+	opts.bounds.Max.Y = 33
 	runFileTest(t, opts)
 }
