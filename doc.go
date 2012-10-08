@@ -2,7 +2,7 @@
 // Copyright © 2012 Jason Summers
 
 /*
-Fpresize is a library that performs high-quality resizing of raster images.
+Package fpresize performs high-quality resizing of raster images.
 
 Fpresize resizes image objects that satisfy the image.Image interface
 from Go's "image" package. You can create such an object

@@ -21,9 +21,10 @@ type FPImage struct {
 
 const maxImagePixels = 536870911 // ((2^31)-1)/4
 
-// fpColor implements the color.Color interface
-type fpColor struct {
-	sam [4]float32
+// FPColor is a custom color type, used by the FPImage type.
+// It implements the color.Color interface.
+type FPColor struct {
+	R, G, B, A float32
 }
 
 // Converts a floating point sample to a uint16 sample.
@@ -42,11 +43,13 @@ func scaleFloatSampleToUint16(s float32, maxVal uint32) uint32 {
 	return x
 }
 
-func (fpc *fpColor) RGBA() (r, g, b, a uint32) {
-	a = scaleFloatSampleToUint16(fpc.sam[3], 65535)
-	r = scaleFloatSampleToUint16(fpc.sam[0]*fpc.sam[3], a)
-	g = scaleFloatSampleToUint16(fpc.sam[1]*fpc.sam[3], a)
-	b = scaleFloatSampleToUint16(fpc.sam[2]*fpc.sam[3], a)
+// "Color can convert itself to alpha-premultiplied 16-bits per channel RGBA."
+// (Method required by the color.Color interface)
+func (fpc FPColor) RGBA() (r, g, b, a uint32) {
+	a = scaleFloatSampleToUint16(fpc.A, 65535)
+	r = scaleFloatSampleToUint16(fpc.R*fpc.A, a)
+	g = scaleFloatSampleToUint16(fpc.G*fpc.A, a)
+	b = scaleFloatSampleToUint16(fpc.B*fpc.A, a)
 	return
 }
 
@@ -54,15 +57,37 @@ func (fpc *fpColor) RGBA() (r, g, b, a uint32) {
 type fpModel struct {
 }
 
+func convertColorToFPColor(c color.Color) FPColor {
+	var fpc FPColor
+	var fpc1 FPColor
+	var ok bool
+	var r, g, b, a uint32
+
+	// If c is already an FPColor, just return it.
+	fpc1, ok = c.(FPColor)
+	if ok {
+		return fpc1
+	}
+
+	r, g, b, a = c.RGBA()
+	if a > 0 {
+		fpc.R = float32(r) / 65535.0
+		fpc.G = float32(g) / 65535.0
+		fpc.B = float32(b) / 65535.0
+		fpc.A = float32(a) / 65535.0
+		if a < 65535 {
+			// Convert from premultiplied alpha
+			fpc.R /= fpc.A
+			fpc.G /= fpc.A
+			fpc.B /= fpc.A
+		}
+	}
+	return fpc
+}
+
 // "Model can convert any Color to one from its own color model."
-// TODO: Implement this.
 func (m *fpModel) Convert(c color.Color) color.Color {
-	var fpc fpColor
-	fpc.sam[0] = 1.0
-	fpc.sam[1] = 0.0
-	fpc.sam[2] = 1.0
-	fpc.sam[3] = 1.0
-	return &fpc
+	return convertColorToFPColor(c)
 }
 
 // (Method required by the image.Image interface)
@@ -78,10 +103,29 @@ func (fp *FPImage) Bounds() (r image.Rectangle) {
 
 // (Method required by the image.Image interface)
 func (fpi *FPImage) At(x, y int) color.Color {
-	var fpc fpColor
-	fpc.sam[0] = fpi.Pix[y*fpi.Stride+x*4+0]
-	fpc.sam[1] = fpi.Pix[y*fpi.Stride+x*4+1]
-	fpc.sam[2] = fpi.Pix[y*fpi.Stride+x*4+2]
-	fpc.sam[3] = fpi.Pix[y*fpi.Stride+x*4+3]
+	var fpc FPColor
+	x -= fpi.Rect.Min.X
+	y -= fpi.Rect.Min.Y
+	fpc.R = fpi.Pix[y*fpi.Stride+x*4+0]
+	fpc.G = fpi.Pix[y*fpi.Stride+x*4+1]
+	fpc.B = fpi.Pix[y*fpi.Stride+x*4+2]
+	fpc.A = fpi.Pix[y*fpi.Stride+x*4+3]
 	return &fpc
+}
+
+// (Method required by the image/draw.Image interface)
+func (fpi *FPImage) Set(x, y int, c color.Color) {
+	var fpc FPColor
+
+	if !(image.Point{x, y}.In(fpi.Rect)) {
+		return
+	}
+
+	fpc = convertColorToFPColor(c)
+	x -= fpi.Rect.Min.X
+	y -= fpi.Rect.Min.Y
+	fpi.Pix[y*fpi.Stride+x*4+0] = fpc.R
+	fpi.Pix[y*fpi.Stride+x*4+1] = fpc.G
+	fpi.Pix[y*fpi.Stride+x*4+2] = fpc.B
+	fpi.Pix[y*fpi.Stride+x*4+3] = fpc.A
 }
