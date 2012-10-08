@@ -43,6 +43,7 @@ type srcToFPWorkContext struct {
 	inputLUT_8to32  []float32
 	inputLUT_16to32 []float32
 	dst             *FPImage
+	srcImage        image.Image
 	src_AsRGBA      *image.RGBA
 	src_AsNRGBA     *image.NRGBA
 }
@@ -59,7 +60,7 @@ func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 
 	for i := 0; i < fp.srcW; i++ {
 		// Read a pixel from the source image, into uint16 samples
-		srcclr := fp.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
+		srcclr := wc.srcImage.At(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
 		srcSam16[0], srcSam16[1], srcSam16[2], srcSam16[3] = srcclr.RGBA()
 
 		if srcSam16[3] < 65535 {
@@ -251,7 +252,7 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 }
 
 // Copies(&converts) from fp.srcImg to the given image.
-func (fp *FPObject) convertSrcToFP(dst *FPImage) error {
+func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
 	var i int
 	var j int
 	var nSamples int
@@ -263,12 +264,13 @@ func (fp *FPObject) convertSrcToFP(dst *FPImage) error {
 
 	wc := new(srcToFPWorkContext)
 	wc.dst = dst
+	wc.srcImage = src
 
 	// If the underlying type of fp.srcImage is RGBA or NRGBA, we can do some
 	// performance optimization.
 	// TODO: It would be nice if we could optimize YCbCr images in the same way.
-	wc.src_AsRGBA, _ = fp.srcImage.(*image.RGBA)
-	wc.src_AsNRGBA, _ = fp.srcImage.(*image.NRGBA)
+	wc.src_AsRGBA, _ = wc.srcImage.(*image.RGBA)
+	wc.src_AsNRGBA, _ = wc.srcImage.(*image.NRGBA)
 
 	if wc.src_AsRGBA != nil || wc.src_AsNRGBA != nil {
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)

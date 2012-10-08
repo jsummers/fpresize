@@ -379,8 +379,8 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 
 // Tell fpresize the image to read.
 // Only one source image may be selected per FPObject.
-// Once selected, the image may not be changed until after the last Resize
-// method is called.
+// Once selected, the image may not be changed until after the first
+// successful call to a Resize* method.
 func (fp *FPObject) SetSourceImage(srcImg image.Image) {
 	fp.srcImage = srcImg
 	fp.srcBounds = srcImg.Bounds()
@@ -580,10 +580,14 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 
 	if fp.srcFPImage == nil {
 		fp.srcFPImage = new(FPImage)
-		err = fp.convertSrcToFP(fp.srcFPImage)
+		err = fp.convertSrcToFP(fp.srcImage, fp.srcFPImage)
 		if err != nil {
 			return nil, err
 		}
+
+		// Now that srcImage has been converted to srcFPImage, we don't need
+		// it anymore.
+		fp.srcImage = nil
 
 		// If we're using transparent virtual pixels, force processing of
 		// the alpha channel.
