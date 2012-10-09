@@ -187,11 +187,7 @@ func runDrawTest(t *testing.T, opts *testOptions) {
 		t.FailNow()
 	}
 
-	// writeImageToFile(t, dst1, opts.actualDir+"1"+opts.outfn) // remove this
-	// writeImageToFile(t, dst2, opts.actualDir+"2"+opts.outfn) // remove this
-
 	// Draw dst2 onto dst1
-	// draw.Draw(dst1, image.Rect(3, 10, 17, 25), dst2, image.ZP, draw.Src)
 	draw.DrawMask(dst1, image.Rect(2, 11, 22, 26), dst2, image.ZP,
 		dst2, image.ZP, draw.Over)
 	writeImageToFile(t, dst1, opts.actualDir+opts.outfn)

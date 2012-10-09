@@ -168,7 +168,7 @@ func MakePixelMixingFilter() *Filter {
 }
 
 // Sinc is the mathematical sinc function, sin(pi*x)/(pi*x).
-// It's public because it may be useful in custom filters.
+// It's exported because it may be useful in custom filters.
 func Sinc(x float64) float64 {
 	if x <= 0.000000005 && x >= -0.000000005 {
 		return 1.0

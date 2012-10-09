@@ -377,9 +377,9 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	return
 }
 
-// Tell fpresize the image to read.
+// SetSourceImage tells fpresize the image to read.
 // Only one source image may be selected per FPObject.
-// Once selected, the image may not be changed until after the first
+// Once selected, the caller may not modify the image until after the first
 // successful call to a Resize* method.
 func (fp *FPObject) SetSourceImage(srcImg image.Image) {
 	fp.srcImage = srcImg
@@ -536,6 +536,7 @@ func (fp *FPObject) SetVirtualPixels(n int) {
 	fp.virtualPixels = n
 }
 
+// (This is a debugging function. Please don't use.)
 func (fp *FPObject) SetProgressCallback(fn func(msg string)) {
 	fp.progressCallback = fn
 }
@@ -548,6 +549,14 @@ func (fp *FPObject) progressMsgf(format string, a ...interface{}) {
 	fp.progressCallback(msg)
 }
 
+// SetMaxWorkerThreads tells fpresize the maximum number of goroutines that it
+// should use simultaneously to do image processing. 0 means default.
+//
+// There should be no reason to call this method, unless you want to slow down
+// fpresize to conserve resources for other routines.
+//
+// It will probably do no good to set this higher than your runtime.GOMAXPROCS
+// setting, or higher than the number of available CPU cores.
 func (fp *FPObject) SetMaxWorkerThreads(n int) {
 	fp.maxWorkers = n
 }
