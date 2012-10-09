@@ -38,14 +38,18 @@ func (fp *FPObject) makeInputLUT_Xto32(tableSize int) []float32 {
 	return tbl
 }
 
+type cvtInputRowFunc func(cctx *srcToFPWorkContext, j int)
+
 // Data that is constant for all workers.
 type srcToFPWorkContext struct {
+	fp              *FPObject
 	inputLUT_8to32  []float32
 	inputLUT_16to32 []float32
 	dst             *FPImage
 	srcImage        image.Image
 	src_AsRGBA      *image.RGBA
 	src_AsNRGBA     *image.NRGBA
+	cvtRowFn        cvtInputRowFunc
 }
 
 type srcToFPWorkItem struct {
@@ -54,9 +58,11 @@ type srcToFPWorkItem struct {
 }
 
 // Convert row j from fp.srcImage to wc.dst.
-func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
+func convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 	var srcSam16 [4]uint32 // Source RGBA samples (uint16 stored in uint32)
 	var k int
+
+	fp := wc.fp
 
 	for i := 0; i < fp.srcW; i++ {
 		// Read a pixel from the source image, into uint16 samples
@@ -121,8 +127,10 @@ func (fp *FPObject) convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 
 // Convert row j from wc.src_AsNRGBA to wc.dst.
 // This is an optimized version of convertSrcToFP_row().
-func (fp *FPObject) convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
+func convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
 	var k int
+
+	fp := wc.fp
 
 	for i := 0; i < fp.srcW; i++ {
 		var srcSam8 []uint8
@@ -171,8 +179,10 @@ func (fp *FPObject) convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
 
 // Convert row j from wc.src_AsRGBA to wc.dst.
 // This is an optimized version of convertSrcToFP_row().
-func (fp *FPObject) convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
+func convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
 	var k int
+
+	fp := wc.fp
 
 	for i := 0; i < fp.srcW; i++ {
 		var srcSam8 []uint8
@@ -241,13 +251,7 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 			return
 		}
 
-		if wc.src_AsNRGBA != nil {
-			fp.convertSrcToFP_row_NRGBA(wc, wi.j)
-		} else if wc.src_AsRGBA != nil {
-			fp.convertSrcToFP_row_RGBA(wc, wi.j)
-		} else {
-			fp.convertSrcToFP_row(wc, wi.j)
-		}
+		wc.cvtRowFn(wc, wi.j)
 	}
 }
 
@@ -263,18 +267,24 @@ func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
 	}
 
 	wc := new(srcToFPWorkContext)
+	wc.fp = fp
 	wc.dst = dst
 	wc.srcImage = src
 
-	// If the underlying type of fp.srcImage is RGBA or NRGBA, we can do some
-	// performance optimization.
+	// Test if the underlying image type of fp.srcImage is RGBA or NRGBA.
 	// TODO: It would be nice if we could optimize YCbCr images in the same way.
 	wc.src_AsRGBA, _ = wc.srcImage.(*image.RGBA)
 	wc.src_AsNRGBA, _ = wc.srcImage.(*image.NRGBA)
 
-	if wc.src_AsRGBA != nil || wc.src_AsNRGBA != nil {
+	// Select a conversion strategy.
+	if wc.src_AsNRGBA != nil {
+		wc.cvtRowFn = convertSrcToFP_row_NRGBA
+		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
+	} else if wc.src_AsRGBA != nil {
+		wc.cvtRowFn = convertSrcToFP_row_RGBA
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else {
+		wc.cvtRowFn = convertSrcToFP_row
 		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
 	}
 
