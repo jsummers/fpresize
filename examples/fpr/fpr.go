@@ -1,8 +1,6 @@
 // ◄◄◄ fpr.go ►►►
 // Copyright © 2012 Jason Summers
 
-// fpr is a sample program that uses the fpresize library.
-// Usage: fpr -h <height> <source-file> <target-file>
 package main
 
 import "fmt"
