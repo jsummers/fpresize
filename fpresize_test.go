@@ -385,7 +385,7 @@ func TestMain(t *testing.T) {
 
 	resetOpts(opts)
 	opts.outfn = "test14.png"
-	opts.infn = "rgb8.jpg"
+	opts.infn = "rgb8-22.jpg"
 	opts.bounds.Min.X = 10
 	opts.bounds.Min.Y = 11
 	opts.bounds.Max.X = 31
@@ -403,4 +403,11 @@ func TestMain(t *testing.T) {
 	resetOpts(opts)
 	opts.outfn = "test16.png"
 	runDrawTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test17.png"
+	opts.infn = "rgb8-11.jpg"
+	opts.bounds.Max.X = 21
+	opts.bounds.Max.Y = 22
+	runFileTest(t, opts)
 }
