@@ -9,6 +9,7 @@
 package fpresize
 
 import "image"
+import "image/color"
 import "errors"
 
 func (fp *FPObject) makeInputLUT_Xto32(tableSize int) []float32 {
@@ -49,6 +50,7 @@ type srcToFPWorkContext struct {
 	srcImage        image.Image
 	src_AsRGBA      *image.RGBA
 	src_AsNRGBA     *image.NRGBA
+	src_AsYCbCr     *image.YCbCr
 	cvtRowFn        cvtInputRowFunc
 }
 
@@ -244,6 +246,55 @@ func convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
 	}
 }
 
+// Convert row j from wc.src_AsYCbCrto wc.dst.
+// This is an optimized version of convertSrcToFP_row(), useful for images that
+// were read from JPEG files.
+//
+// Although not very optimized, it's still well over twice as fast as using
+// convertSrcToFP_row would be.
+func convertSrcToFP_row_YCbCr(wc *srcToFPWorkContext, j int) {
+	var k int
+
+	fp := wc.fp
+
+	for i := 0; i < fp.srcW; i++ {
+		var srcY, srcCb, srcCr uint8
+		var srcRGB [3]uint8
+
+		yOffs := wc.src_AsYCbCr.YOffset(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
+		cOffs := wc.src_AsYCbCr.COffset(fp.srcBounds.Min.X+i, fp.srcBounds.Min.Y+j)
+
+		srcY = wc.src_AsYCbCr.Y[yOffs]
+		srcCb = wc.src_AsYCbCr.Cb[cOffs]
+		srcCr = wc.src_AsYCbCr.Cr[cOffs]
+
+		srcRGB[0], srcRGB[1], srcRGB[2] = color.YCbCrToRGB(srcY, srcCb, srcCr)
+
+		// Identify the slice of samples representing this pixel in the
+		// converted image.
+		// Note that we never set dstSam[3], because it's only used if
+		// hasTransparency is true, which won't happen for YCbCr images.
+		dstSam := wc.dst.Pix[j*wc.dst.Stride+4*i : j*wc.dst.Stride+4*i+4]
+
+		if fp.inputCCF != nil && wc.inputLUT_8to32 != nil {
+			// Convert to linear color, using a lookup table.
+			for k = 0; k < 3; k++ {
+				dstSam[k] = wc.inputLUT_8to32[srcRGB[k]]
+			}
+		} else {
+			// In all other cases, first copy the uncorrected samples into dstSam
+			for k = 0; k < 3; k++ {
+				dstSam[k] = float32(srcRGB[k]) / 255.0
+			}
+
+			if fp.inputCCF != nil {
+				// Convert to linear color, without a lookup table.
+				fp.inputCCF(dstSam[0:3])
+			}
+		}
+	}
+}
+
 func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFPWorkItem) {
 	for {
 		wi := <-workQueue
@@ -271,10 +322,11 @@ func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
 	wc.dst = dst
 	wc.srcImage = src
 
-	// Test if the underlying image type of fp.srcImage is RGBA or NRGBA.
-	// TODO: It would be nice if we could optimize YCbCr images in the same way.
+	// Test if the underlying image type of fp.srcImage is one for which we
+	// have an optimized converter function.
 	wc.src_AsRGBA, _ = wc.srcImage.(*image.RGBA)
 	wc.src_AsNRGBA, _ = wc.srcImage.(*image.NRGBA)
+	wc.src_AsYCbCr, _ = wc.srcImage.(*image.YCbCr)
 
 	// Select a conversion strategy.
 	if wc.src_AsNRGBA != nil {
@@ -282,6 +334,9 @@ func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else if wc.src_AsRGBA != nil {
 		wc.cvtRowFn = convertSrcToFP_row_RGBA
+		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
+	} else if wc.src_AsYCbCr != nil {
+		wc.cvtRowFn = convertSrcToFP_row_YCbCr
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else {
 		wc.cvtRowFn = convertSrcToFP_row
