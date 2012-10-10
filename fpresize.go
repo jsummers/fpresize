@@ -36,7 +36,7 @@ type FPObject struct {
 	// resized multiple times.
 	srcFPImage *FPImage
 
-	hasTransparency bool // Does the source image have transparency?
+	hasTransparency bool // Do we need to process an alpha channel?
 
 	filterGetter FilterGetter
 	blurGetter   BlurGetter
@@ -57,8 +57,8 @@ type FPObject struct {
 }
 
 const (
-	VirtualPixelsNone        = 0
-	VirtualPixelsTransparent = 1
+	VirtualPixelsNone        = iota
+	VirtualPixelsTransparent = iota
 )
 
 // A ColorConverter is passed a slice of samples. It converts them all to
@@ -102,8 +102,7 @@ func fixupFilterArg(filterFlags uint32, x float64) float64 {
 	return x
 }
 
-// Create and return a weightlist using fp.filter.
-// scrN, dstN = number of samples
+// Create and return a weightlist for the given dimension, using fp.filter.
 func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 	var srcN, dstCanvasN int
 	var dstTrueN float64
@@ -317,7 +316,6 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 	}
 
 	// Tell the workers to stop, and block until they all receive our Stop message.
-	// TODO: This seems kind of crude.
 	wi.stopNow = true
 	for i = 0; i < fp.numWorkers; i++ {
 		workQueue <- wi
@@ -473,8 +471,8 @@ func LinearTosRGB(s []float32) {
 // Supply a ColorConverter function to use when converting the original colors
 // to the colors in which the resizing will be performed.
 // 
-// This must be called before calling a Resize method, and may not be changed
-// afterward.
+// This must be called before calling the first Resize method, and may not be
+// changed afterward.
 // The default value is SRGBToLinear.
 // This may be nil, for no conversion.
 func (fp *FPObject) SetInputColorConverter(ccf ColorConverter) {
@@ -494,11 +492,13 @@ func (fp *FPObject) SetOutputColorConverter(ccf ColorConverter) {
 	fp.outputCCFSet = true
 }
 
+// Set the properties of the input color converter.
 // Accepts a bitwise combination of CCFFlag* values.
 func (fp *FPObject) SetInputColorConverterFlags(flags uint32) {
 	fp.inputCCFFlags = flags
 }
 
+// Set the properties of the ouput color converter.
 // Accepts a bitwise combination of CCFFlag* values.
 func (fp *FPObject) SetOutputColorConverterFlags(flags uint32) {
 	fp.outputCCFFlags = flags
@@ -528,7 +528,7 @@ func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 // the upper-left corner of the source image will be mapped. Note that it
 // does not have to be an integer.
 //
-// x2, y2: The point onto which the lower-left corner of the source
+// x2, y2: The point onto which the lower-right corner of the source
 // image will be mapped.
 func (fp *FPObject) SetTargetBoundsAdvanced(dstBounds image.Rectangle,
 	x1, y1, x2, y2 float64) {

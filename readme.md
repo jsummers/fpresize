@@ -16,7 +16,7 @@ To build the example utility, type:
     go install github.com/jsummers/fpresize/examples/fpr
 
 The `fpr` program should appear at `GOPATH/bin/fpr`, where `GOPATH`
-is the first path in your `GOPATH` environment variables.
+is the first path in your `GOPATH` environment variable.
 
 
 Documentation
