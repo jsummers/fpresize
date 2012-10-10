@@ -109,14 +109,14 @@ func runFileTest(t *testing.T, opts *testOptions) {
 	var dstBounds image.Rectangle
 	var err error
 
-	fp := new(FPObject)
 	src = readImageFromFile(t, opts.srcImgDir+opts.infn)
 
 	if opts.convertToRGBA {
 		src = convertToRGBA(t, src)
 	}
 
-	fp.SetSourceImage(src)
+	fp := New(src)
+
 	if opts.advancedBounds {
 		fp.SetTargetBoundsAdvanced(opts.bounds, opts.adv_x1, opts.adv_y1, opts.adv_x2, opts.adv_y2)
 	} else {
@@ -170,9 +170,8 @@ func runDrawTest(t *testing.T, opts *testOptions) {
 	var dst2 image.Image
 	var err error
 
-	fp := new(FPObject)
 	src = readImageFromFile(t, opts.srcImgDir+"rgb8a.png")
-	fp.SetSourceImage(src)
+	fp := New(src)
 	fp.SetTargetBounds(image.Rect(0, 0, 28, 28))
 	dst1, err = fp.Resize()
 	if err != nil {

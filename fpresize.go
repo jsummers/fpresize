@@ -377,10 +377,21 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	return
 }
 
+// New allocates a new FPObject, and sets its source image. This
+// is equivalent to calling new(FPObject) followed by SetSourceImage.
+func New(srcImg image.Image) *FPObject {
+	fp := new(FPObject)
+	fp.SetSourceImage(srcImg)
+	return fp
+}
+
 // SetSourceImage tells fpresize the image to read.
 // Only one source image may be selected per FPObject.
 // Once selected, the caller may not modify the image until after the first
 // successful call to a Resize* method.
+//
+// It is recommended to call New(), instead of calling SetSourceImage
+// directly.
 func (fp *FPObject) SetSourceImage(srcImg image.Image) {
 	fp.srcImage = srcImg
 	fp.srcBounds = srcImg.Bounds()

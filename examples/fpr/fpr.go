@@ -113,7 +113,7 @@ func resizeMain(options *options_type) error {
 		return err
 	}
 
-	fp := new(fpresize.FPObject)
+	fp := fpresize.New(srcImg)
 
 	fp.SetProgressCallback(func(msg string) { progressMsg(options, msg) })
 
@@ -122,8 +122,6 @@ func resizeMain(options *options_type) error {
 		fp.SetInputColorConverter(nil)
 		fp.SetOutputColorConverter(nil)
 	}
-
-	fp.SetSourceImage(srcImg)
 
 	if options.filterName == "auto" {
 	} else if options.filterName == "lanczos2" {

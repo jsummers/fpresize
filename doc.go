@@ -20,13 +20,9 @@ For best performance, make sure your program allows multiple CPUs to be used:
 
     runtime.GOMAXPROCS(runtime.NumCPU())
 
-Create a new FPObject:
+Create a new FPObject based on your source image:
 
-    fp := new(fpresize.FPObject)
-
-Give fpresize a pointer to your source image:
-
-    fp.SetSourceImage(sourceImage)
+    fp := fpresize.New(sourceImage)
 
 Tell fpresize what size you want the new image to be, in pixels:
 
