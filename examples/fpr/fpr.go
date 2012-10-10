@@ -118,7 +118,7 @@ func resizeMain(options *options_type) error {
 	fp.SetProgressCallback(func(msg string) { progressMsg(options, msg) })
 
 	if options.noGamma {
-		// To do colorspace-unaware resizing, call the following functions:
+		// To do colorspace-unaware resizing, call the following methods:
 		fp.SetInputColorConverter(nil)
 		fp.SetOutputColorConverter(nil)
 	}

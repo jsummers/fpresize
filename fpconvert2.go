@@ -466,7 +466,7 @@ func convertFPToRGBA64_row(cctx *cvtFromFPContext, j int) {
 }
 
 // TODO: If we are not going to use lookup tables to speed up color correction,
-// this function and convertFPToNRGBA64 could be merged.
+// this method and convertFPToNRGBA64 could be merged.
 func (fp *FPObject) convertFPToRGBA64(src *FPImage) *image.RGBA64 {
 	cctx := new(cvtFromFPContext)
 	cctx.fp = fp

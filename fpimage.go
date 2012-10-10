@@ -43,9 +43,10 @@ func scaleFloatSampleToUint16(s float32, maxVal uint32) uint32 {
 	return x
 }
 
-// "Color can convert itself to alpha-premultiplied 16-bits per channel RGBA."
 // (Method required by the color.Color interface)
 func (fpc FPColor) RGBA() (r, g, b, a uint32) {
+	// "RGBA returns the alpha-premultiplied red, green, blue and alpha values
+	// for the color. Each value ranges within [0, 0xFFFF]"
 	a = scaleFloatSampleToUint16(fpc.A, 65535)
 	r = scaleFloatSampleToUint16(fpc.R*fpc.A, a)
 	g = scaleFloatSampleToUint16(fpc.G*fpc.A, a)

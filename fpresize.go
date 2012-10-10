@@ -536,7 +536,7 @@ func (fp *FPObject) SetVirtualPixels(n int) {
 	fp.virtualPixels = n
 }
 
-// (This is a debugging function. Please don't use.)
+// (This is a debugging method. Please don't use.)
 func (fp *FPObject) SetProgressCallback(fn func(msg string)) {
 	fp.progressCallback = fn
 }
@@ -624,12 +624,11 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 }
 
 // Resize resizes the image, and returns a pointer to an image that
-// uses the custom FPImage type.
+// uses the custom FPImage type. The returned image is high-precision,
+// and satisfies the image.Image and image/draw.Image interfaces.
 //
-// This function returns a high-precision image that satisfies the image.Image
-// interface, but it may be slow.
-// You should almost always use ResizeToNRGBA, ResizeToRGBA, ResizeToNRGBA64,
-// or ResizeToRGBA64 instead.
+// This method may be slow. You should almost always use ResizeToNRGBA,
+// ResizeToRGBA, ResizeToNRGBA64, or ResizeToRGBA64 instead.
 func (fp *FPObject) Resize() (*FPImage, error) {
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {
@@ -672,7 +671,7 @@ func (fp *FPObject) ResizeToRGBA() (*image.RGBA, error) {
 // ResizeNRGBA resizes the image, and returns a pointer to an image that
 // uses the NRGBA64 format.
 //
-// Use this if you intend to write the image to an 16-bits-per-sample PNG
+// Use this if you intend to write the image to a 16-bits-per-sample PNG
 // file.
 func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
 	dstFPImage, err := fp.resizeMain()
@@ -688,8 +687,8 @@ func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
 // uses the RGBA64 format.
 //
 // This is essentially the native format of Go's "image" package, so this
-// may be the function to use if you are going to further process the image
-// before writing it to a file.
+// may be the method to use if you are going to further process the image,
+// instead of simply writing it to a file.
 func (fp *FPObject) ResizeToRGBA64() (*image.RGBA64, error) {
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {
