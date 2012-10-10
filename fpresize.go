@@ -600,6 +600,12 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 	}
 
 	if fp.srcFPImage == nil {
+		// If we're using transparent virtual pixels, force processing of
+		// the alpha channel.
+		if fp.virtualPixels == VirtualPixelsTransparent {
+			fp.hasTransparency = true
+		}
+
 		fp.srcFPImage = new(FPImage)
 		err = fp.convertSrcToFP(fp.srcImage, fp.srcFPImage)
 		if err != nil {
@@ -609,12 +615,6 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 		// Now that srcImage has been converted to srcFPImage, we don't need
 		// it anymore.
 		fp.srcImage = nil
-
-		// If we're using transparent virtual pixels, force processing of
-		// the alpha channel.
-		if fp.virtualPixels == VirtualPixelsTransparent {
-			fp.hasTransparency = true
-		}
 	}
 
 	// When changing the width, the relevant samples are close together in memory.

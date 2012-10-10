@@ -410,5 +410,10 @@ func TestMain(t *testing.T) {
 	opts.infn = "rgb8-11.jpg"
 	opts.bounds.Max.X = 21
 	opts.bounds.Max.Y = 22
+	opts.advancedBounds = true
+	opts.adv_x1 = 2.2
+	opts.adv_y1 = 2.2
+	opts.adv_x2 = 21.0+2.2
+	opts.adv_y2 = 22.0+2.2
 	runFileTest(t, opts)
 }

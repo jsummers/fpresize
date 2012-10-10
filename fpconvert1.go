@@ -272,8 +272,6 @@ func convertSrcToFP_row_YCbCr(wc *srcToFPWorkContext, j int) {
 
 		// Identify the slice of samples representing this pixel in the
 		// converted image.
-		// Note that we never set dstSam[3], because it's only used if
-		// hasTransparency is true, which won't happen for YCbCr images.
 		dstSam := wc.dst.Pix[j*wc.dst.Stride+4*i : j*wc.dst.Stride+4*i+4]
 
 		if fp.inputCCF != nil && wc.inputLUT_8to32 != nil {
@@ -292,6 +290,7 @@ func convertSrcToFP_row_YCbCr(wc *srcToFPWorkContext, j int) {
 				fp.inputCCF(dstSam[0:3])
 			}
 		}
+		dstSam[3] = 1.0 // YCbCr is always opaque
 	}
 }
 
