@@ -148,6 +148,7 @@ type cvtFromFPContext struct {
 	dstRGBA    *image.RGBA
 	dstRGBA64  *image.RGBA64
 	dstNRGBA64 *image.NRGBA64
+	isNRGBA64  bool
 
 	outputLUT_Xto8_Size  int
 	outputLUT_Xto8       []uint8
@@ -378,8 +379,9 @@ func (fp *FPObject) convertFPToRGBA(src *FPImage) (dst *image.RGBA) {
 	return
 }
 
-func convertFPToNRGBA64_row(cctx *cvtFromFPContext, j int) {
+func convertFPToRGBA64orNRGBA64_row(cctx *cvtFromFPContext, j int) {
 	var dstSam [4]uint16
+	var dstPixelData []uint8
 	var k int
 
 	cctx.fp.postProcessImage_row(cctx.src, j)
@@ -399,13 +401,21 @@ func convertFPToNRGBA64_row(cctx *cvtFromFPContext, j int) {
 			cctx.fp.outputCCF(srcSam[0:3])
 		}
 
-		// Calculate the non-alpha samples.
-		for k = 0; k < 3; k++ {
-			dstSam[k] = uint16(srcSam[k]*65535.0 + 0.5)
+		if cctx.isNRGBA64 {
+			// Calculate the non-alpha samples.
+			for k = 0; k < 3; k++ {
+				dstSam[k] = uint16(srcSam[k]*65535.0 + 0.5)
+			}
+			// Locate this pixel in the target image.
+			dstPixelData = cctx.dstNRGBA64.Pix[j*cctx.dstNRGBA64.Stride+i*8 : j*cctx.dstNRGBA64.Stride+i*8+8]
+		} else { // RGBA64 format
+			for k = 0; k < 3; k++ {
+				dstSam[k] = uint16((srcSam[k]*srcSam[3])*65535.0 + 0.5)
+			}
+			dstPixelData = cctx.dstRGBA64.Pix[j*cctx.dstRGBA64.Stride+i*8 : j*cctx.dstRGBA64.Stride+i*8+8]
 		}
 
-		// Convert all samples to NRGBA format
-		dstPixelData := cctx.dstNRGBA64.Pix[j*cctx.dstNRGBA64.Stride+i*8 : j*cctx.dstNRGBA64.Stride+i*8+8]
+		// Convert all samples to final RGBA/NRGBA format (big endian uint16)
 		for k = 0; k < 4; k++ {
 			dstPixelData[k*2] = uint8(dstSam[k] >> 8)
 			dstPixelData[k*2+1] = uint8(dstSam[k] & 0xff)
@@ -417,6 +427,7 @@ func (fp *FPObject) convertFPToNRGBA64(src *FPImage) *image.NRGBA64 {
 	cctx := new(cvtFromFPContext)
 	cctx.fp = fp
 	cctx.src = src
+	cctx.isNRGBA64 = true
 	cctx.dstNRGBA64 = image.NewNRGBA64(src.Bounds())
 
 	if fp.outputCCF == nil {
@@ -425,52 +436,16 @@ func (fp *FPObject) convertFPToNRGBA64(src *FPImage) *image.NRGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and NRGBA64 format")
 	}
 
-	cctx.cvtRowFn = convertFPToNRGBA64_row
+	cctx.cvtRowFn = convertFPToRGBA64orNRGBA64_row
 	fp.convertOutputImageIndirect(cctx)
 	return cctx.dstNRGBA64
 }
 
-func convertFPToRGBA64_row(cctx *cvtFromFPContext, j int) {
-	var dstSam [4]uint16
-	var k int
-
-	cctx.fp.postProcessImage_row(cctx.src, j)
-
-	for i := 0; i < (cctx.src.Rect.Max.X - cctx.src.Rect.Min.X); i++ {
-		srcSam := cctx.src.Pix[j*cctx.src.Stride+i*4 : j*cctx.src.Stride+i*4+4]
-
-		// Set the alpha sample
-		if !cctx.fp.hasTransparency {
-			dstSam[3] = 65535
-		} else {
-			dstSam[3] = uint16(srcSam[3]*65535.0 + 0.5)
-		}
-
-		// Do colorspace conversion if needed.
-		if cctx.fp.outputCCF != nil && dstSam[3] > 0 {
-			cctx.fp.outputCCF(srcSam[0:3])
-		}
-
-		// Calculate the non-alpha samples.
-		for k = 0; k < 3; k++ {
-			dstSam[k] = uint16((srcSam[k]*srcSam[3])*65535.0 + 0.5)
-		}
-
-		// Convert all samples to NRGBA format
-		dstPixelData := cctx.dstRGBA64.Pix[j*cctx.dstRGBA64.Stride+i*8 : j*cctx.dstRGBA64.Stride+i*8+8]
-		for k = 0; k < 4; k++ {
-			dstPixelData[k*2] = uint8(dstSam[k] >> 8)
-			dstPixelData[k*2+1] = uint8(dstSam[k] & 0xff)
-		}
-	}
-}
-
-// TODO: If we are not going to use lookup tables to speed up color correction,
-// this method and convertFPToNRGBA64 could be merged.
 func (fp *FPObject) convertFPToRGBA64(src *FPImage) *image.RGBA64 {
 	cctx := new(cvtFromFPContext)
 	cctx.fp = fp
 	cctx.src = src
+	cctx.isNRGBA64 = false
 	cctx.dstRGBA64 = image.NewRGBA64(src.Bounds())
 
 	if fp.outputCCF == nil {
@@ -479,7 +454,7 @@ func (fp *FPObject) convertFPToRGBA64(src *FPImage) *image.RGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and RGBA64 format")
 	}
 
-	cctx.cvtRowFn = convertFPToRGBA64_row
+	cctx.cvtRowFn = convertFPToRGBA64orNRGBA64_row
 	fp.convertOutputImageIndirect(cctx)
 	return cctx.dstRGBA64
 }
