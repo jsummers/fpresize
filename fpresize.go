@@ -524,8 +524,9 @@ func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 // 
 // dstBounds is the bounds of the target image.
 //
-// x1, y1: The point onto which the upper-left corner of the source
-// image will be mapped. Note that it does not have to be an integer.
+// x1, y1: The point (in the same coordinate system as dstBounds) onto which
+// the upper-left corner of the source image will be mapped. Note that it
+// does not have to be an integer.
 //
 // x2, y2: The point onto which the lower-left corner of the source
 // image will be mapped.
@@ -534,8 +535,8 @@ func (fp *FPObject) SetTargetBoundsAdvanced(dstBounds image.Rectangle,
 	fp.dstBounds = dstBounds
 	fp.dstCanvasW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
 	fp.dstCanvasH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
-	fp.dstOffsetX = x1
-	fp.dstOffsetY = y1
+	fp.dstOffsetX = x1 - float64(fp.dstBounds.Min.X)
+	fp.dstOffsetY = y1 - float64(fp.dstBounds.Min.Y)
 	fp.dstTrueW = x2 - x1
 	fp.dstTrueH = y2 - y1
 	fp.virtualPixels = VirtualPixelsTransparent

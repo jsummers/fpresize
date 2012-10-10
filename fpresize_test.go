@@ -277,13 +277,15 @@ func TestMain(t *testing.T) {
 	resetOpts(opts)
 	opts.outfn = "test4.png"
 	opts.infn = "rgb8.png"
-	opts.bounds.Max.X = 21
-	opts.bounds.Max.Y = 22
+	opts.bounds.Min.X = 100
+	opts.bounds.Min.Y = 100
+	opts.bounds.Max.X = 121
+	opts.bounds.Max.Y = 122
 	opts.advancedBounds = true
-	opts.adv_x1 = 0.5
-	opts.adv_y1 = 2.0
-	opts.adv_x2 = 20.5
-	opts.adv_y2 = 21.0
+	opts.adv_x1 = 100.5
+	opts.adv_y1 = 102.0
+	opts.adv_x2 = 120.5
+	opts.adv_y2 = 121.0
 	opts.filter = MakeLanczosFilter(4)
 	runFileTest(t, opts)
 
