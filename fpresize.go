@@ -647,7 +647,7 @@ func (fp *FPObject) Resize() (*FPImage, error) {
 		return nil, err
 	}
 
-	fp.convertFPToFinalFP(dstFPImage)
+	fp.convertDst_FP(dstFPImage)
 	return dstFPImage, nil
 }
 
@@ -676,7 +676,7 @@ func (fp *FPObject) ResizeToRGBA() (*image.RGBA, error) {
 		return nil, err
 	}
 
-	rgba := fp.convertFPToRGBA(dstFPImage)
+	rgba := fp.convertDst_RGBA(dstFPImage)
 	return rgba, nil
 }
 
@@ -691,7 +691,7 @@ func (fp *FPObject) ResizeToNRGBA64() (*image.NRGBA64, error) {
 		return nil, err
 	}
 
-	nrgba64 := fp.convertFPToNRGBA64(dstFPImage)
+	nrgba64 := fp.convertDst_NRGBA64(dstFPImage)
 	return nrgba64, nil
 }
 
@@ -707,6 +707,6 @@ func (fp *FPObject) ResizeToRGBA64() (*image.RGBA64, error) {
 		return nil, err
 	}
 
-	rgba64 := fp.convertFPToRGBA64(dstFPImage)
+	rgba64 := fp.convertDst_RGBA64(dstFPImage)
 	return rgba64, nil
 }

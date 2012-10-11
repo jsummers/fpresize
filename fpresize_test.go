@@ -413,7 +413,7 @@ func TestMain(t *testing.T) {
 	opts.advancedBounds = true
 	opts.adv_x1 = 2.2
 	opts.adv_y1 = 2.2
-	opts.adv_x2 = 21.0+2.2
-	opts.adv_y2 = 22.0+2.2
+	opts.adv_x2 = 21.0 + 2.2
+	opts.adv_y2 = 22.0 + 2.2
 	runFileTest(t, opts)
 }

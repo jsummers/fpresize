@@ -39,11 +39,10 @@ func (fp *FPObject) makeInputLUT_Xto32(tableSize int) []float32 {
 	return tbl
 }
 
-type cvtInputRowFunc func(cctx *srcToFPWorkContext, j int)
+type cvtInputRowFunc func(fp *FPObject, cctx *srcToFPWorkContext, j int)
 
 // Data that is constant for all workers.
 type srcToFPWorkContext struct {
-	fp              *FPObject
 	inputLUT_8to32  []float32
 	inputLUT_16to32 []float32
 	dst             *FPImage
@@ -60,11 +59,9 @@ type srcToFPWorkItem struct {
 }
 
 // Convert row j from fp.srcImage to wc.dst.
-func convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
+func convertSrcRow_Any(fp *FPObject, wc *srcToFPWorkContext, j int) {
 	var srcSam16 [4]uint32 // Source RGBA samples (uint16 stored in uint32)
 	var k int
-
-	fp := wc.fp
 
 	for i := 0; i < fp.srcW; i++ {
 		// Read a pixel from the source image, into uint16 samples
@@ -128,11 +125,9 @@ func convertSrcToFP_row(wc *srcToFPWorkContext, j int) {
 }
 
 // Convert row j from wc.src_AsNRGBA to wc.dst.
-// This is an optimized version of convertSrcToFP_row().
-func convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
+// This is an optimized version of convertSrcRow_Any().
+func convertSrcRow_NRGBA(fp *FPObject, wc *srcToFPWorkContext, j int) {
 	var k int
-
-	fp := wc.fp
 
 	for i := 0; i < fp.srcW; i++ {
 		var srcSam8 []uint8
@@ -180,11 +175,9 @@ func convertSrcToFP_row_NRGBA(wc *srcToFPWorkContext, j int) {
 }
 
 // Convert row j from wc.src_AsRGBA to wc.dst.
-// This is an optimized version of convertSrcToFP_row().
-func convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
+// This is an optimized version of convertSrcRow_Any().
+func convertSrcRow_RGBA(fp *FPObject, wc *srcToFPWorkContext, j int) {
 	var k int
-
-	fp := wc.fp
 
 	for i := 0; i < fp.srcW; i++ {
 		var srcSam8 []uint8
@@ -247,15 +240,13 @@ func convertSrcToFP_row_RGBA(wc *srcToFPWorkContext, j int) {
 }
 
 // Convert row j from wc.src_AsYCbCrto wc.dst.
-// This is an optimized version of convertSrcToFP_row(), useful for images that
+// This is an optimized version of convertSrcRow_Any(), useful for images that
 // were read from JPEG files.
 //
 // Although not very optimized, it's still well over twice as fast as using
-// convertSrcToFP_row would be.
-func convertSrcToFP_row_YCbCr(wc *srcToFPWorkContext, j int) {
+// convertSrcRow_Any would be.
+func convertSrcRow_YCbCr(fp *FPObject, wc *srcToFPWorkContext, j int) {
 	var k int
-
-	fp := wc.fp
 
 	for i := 0; i < fp.srcW; i++ {
 		var srcY, srcCb, srcCr uint8
@@ -301,7 +292,7 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 			return
 		}
 
-		wc.cvtRowFn(wc, wi.j)
+		wc.cvtRowFn(fp, wc, wi.j)
 	}
 }
 
@@ -317,7 +308,6 @@ func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
 	}
 
 	wc := new(srcToFPWorkContext)
-	wc.fp = fp
 	wc.dst = dst
 	wc.srcImage = src
 
@@ -329,16 +319,16 @@ func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
 
 	// Select a conversion strategy.
 	if wc.src_AsNRGBA != nil {
-		wc.cvtRowFn = convertSrcToFP_row_NRGBA
+		wc.cvtRowFn = convertSrcRow_NRGBA
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else if wc.src_AsRGBA != nil {
-		wc.cvtRowFn = convertSrcToFP_row_RGBA
+		wc.cvtRowFn = convertSrcRow_RGBA
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else if wc.src_AsYCbCr != nil {
-		wc.cvtRowFn = convertSrcToFP_row_YCbCr
+		wc.cvtRowFn = convertSrcRow_YCbCr
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else {
-		wc.cvtRowFn = convertSrcToFP_row
+		wc.cvtRowFn = convertSrcRow_Any
 		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
 	}
 
