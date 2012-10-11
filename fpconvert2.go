@@ -132,14 +132,12 @@ func (fp *FPObject) postProcessRow(im *FPImage, j int) {
 	}
 }
 
-type cvtOutputRowFunc func(fp *FPObject, cctx *cvtFromFPContext, j int)
-
 // Miscellaneous contextual data that is used internaly by the varioius
 // conversion functions.
-type cvtFromFPContext struct {
+type convertDstWorkContext struct {
 	src *FPImage
 
-	cvtRowFn cvtOutputRowFunc
+	cvtRowFn func(fp *FPObject, wc *convertDstWorkContext, j int)
 
 	dstPix    []uint8
 	dstStride int
@@ -155,34 +153,34 @@ type cvtFromFPContext struct {
 	outputLUT_Xto32      []float32
 }
 
-type toOutputWorkItem struct {
+type convertDstWorkItem struct {
 	j       int
 	stopNow bool
 }
 
-func (fp *FPObject) toOutputWorker(cctx *cvtFromFPContext, workQueue chan toOutputWorkItem) {
+func (fp *FPObject) convertDstWorker(wc *convertDstWorkContext, workQueue chan convertDstWorkItem) {
 	for {
 		wi := <-workQueue
 		if wi.stopNow {
 			return
 		}
 
-		cctx.cvtRowFn(fp, cctx, wi.j)
+		wc.cvtRowFn(fp, wc, wi.j)
 	}
 }
 
-func (fp *FPObject) convertDstIndirect(cctx *cvtFromFPContext) {
+func (fp *FPObject) convertDstIndirect(wc *convertDstWorkContext) {
 	var i, j int
-	var wi toOutputWorkItem
+	var wi convertDstWorkItem
 
-	workQueue := make(chan toOutputWorkItem)
+	workQueue := make(chan convertDstWorkItem)
 
 	for i = 0; i < fp.numWorkers; i++ {
-		go fp.toOutputWorker(cctx, workQueue)
+		go fp.convertDstWorker(wc, workQueue)
 	}
 
 	// Each row is a "work item". Send each row to a worker.
-	for j = 0; j < (cctx.src.Rect.Max.Y - cctx.src.Rect.Min.Y); j++ {
+	for j = 0; j < (wc.src.Rect.Max.Y - wc.src.Rect.Min.Y); j++ {
 		wi.j = j
 		workQueue <- wi
 	}
@@ -194,15 +192,15 @@ func (fp *FPObject) convertDstIndirect(cctx *cvtFromFPContext) {
 	}
 }
 
-func convertDstRow_FP(fp *FPObject, cctx *cvtFromFPContext, j int) {
-	fp.postProcessRow(cctx.src, j)
+func convertDstRow_FP(fp *FPObject, wc *convertDstWorkContext, j int) {
+	fp.postProcessRow(wc.src, j)
 	if fp.outputCCF == nil {
 		return
 	}
 
-	for i := 0; i < (cctx.src.Rect.Max.X - cctx.src.Rect.Min.X); i++ {
+	for i := 0; i < (wc.src.Rect.Max.X - wc.src.Rect.Min.X); i++ {
 		// Identify the slice of samples representing the pixel we're updating.
-		sam := cctx.src.Pix[j*cctx.src.Stride+i*4 : j*cctx.src.Stride+i*4+4]
+		sam := wc.src.Pix[j*wc.src.Stride+i*4 : j*wc.src.Stride+i*4+4]
 
 		if sam[3] <= 0.0 {
 			// A fully transparent pixel (nothing to do)
@@ -218,8 +216,8 @@ func convertDstRow_FP(fp *FPObject, cctx *cvtFromFPContext, j int) {
 // processing: convert to unassociated alpha, and probably convert from linear
 // color to the target colorspace. The conversion is in-place.
 func (fp *FPObject) convertDst_FP(im *FPImage) {
-	cctx := new(cvtFromFPContext)
-	cctx.src = im
+	wc := new(convertDstWorkContext)
+	wc.src = im
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Post-processing image")
@@ -227,18 +225,18 @@ func (fp *FPObject) convertDst_FP(im *FPImage) {
 		fp.progressMsgf("Converting to target colorspace")
 	}
 
-	cctx.cvtRowFn = convertDstRow_FP
-	fp.convertDstIndirect(cctx)
+	wc.cvtRowFn = convertDstRow_FP
+	fp.convertDstIndirect(wc)
 }
 
-func convertDstRow_NRGBA(fp *FPObject, cctx *cvtFromFPContext, j int) {
+func convertDstRow_NRGBA(fp *FPObject, wc *convertDstWorkContext, j int) {
 	var k int
 
-	fp.postProcessRow(cctx.src, j)
+	fp.postProcessRow(wc.src, j)
 
-	for i := 0; i < (cctx.src.Rect.Max.X - cctx.src.Rect.Min.X); i++ {
-		srcSam := cctx.src.Pix[j*cctx.src.Stride+i*4 : j*cctx.src.Stride+i*4+4]
-		dstSam := cctx.dstPix[j*cctx.dstStride+i*4 : j*cctx.dstStride+i*4+4]
+	for i := 0; i < (wc.src.Rect.Max.X - wc.src.Rect.Min.X); i++ {
+		srcSam := wc.src.Pix[j*wc.src.Stride+i*4 : j*wc.src.Stride+i*4+4]
+		dstSam := wc.dstPix[j*wc.dstStride+i*4 : j*wc.dstStride+i*4+4]
 
 		// Set the alpha sample
 		if !fp.hasTransparency {
@@ -249,10 +247,10 @@ func convertDstRow_NRGBA(fp *FPObject, cctx *cvtFromFPContext, j int) {
 
 		// Do colorspace conversion if needed.
 		if fp.outputCCF != nil && dstSam[3] > 0 {
-			if cctx.outputLUT_Xto8 != nil {
+			if wc.outputLUT_Xto8 != nil {
 				// Do colorspace conversion using a lookup table.
 				for k = 0; k < 3; k++ {
-					dstSam[k] = cctx.outputLUT_Xto8[int(srcSam[k]*float32(cctx.outputLUT_Xto8_Size-1)+0.5)]
+					dstSam[k] = wc.outputLUT_Xto8[int(srcSam[k]*float32(wc.outputLUT_Xto8_Size-1)+0.5)]
 				}
 				continue
 			} else {
@@ -272,10 +270,10 @@ func convertDstRow_NRGBA(fp *FPObject, cctx *cvtFromFPContext, j int) {
 // dst is uint8, target colorspace, unassociated alpha
 // It's okay to modify src's pixels; it's about to be thrown away.
 func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstStride int) {
-	cctx := new(cvtFromFPContext)
-	cctx.src = src
-	cctx.dstPix = dstPix
-	cctx.dstStride = dstStride
+	wc := new(convertDstWorkContext)
+	wc.src = src
+	wc.dstPix = dstPix
+	wc.dstStride = dstStride
 
 	// This table size is optimized for sRGB. The sRGB curve's slope for
 	// the darkest colors (the ones we're most concerned about) is 12.92,
@@ -283,8 +281,8 @@ func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstS
 	// that it includes every possible color value. A size of 255*12.92*3+1 =
 	// 9885 improves precision, and makes the dark colors almost always
 	// round correctly.
-	cctx.outputLUT_Xto8_Size = 9885
-	cctx.outputLUT_Xto8 = fp.makeOutputLUT_Xto8(cctx.outputLUT_Xto8_Size)
+	wc.outputLUT_Xto8_Size = 9885
+	wc.outputLUT_Xto8 = fp.makeOutputLUT_Xto8(wc.outputLUT_Xto8_Size)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to NRGBA format")
@@ -292,8 +290,8 @@ func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstS
 		fp.progressMsgf("Converting to target colorspace, and NRGBA format")
 	}
 
-	cctx.cvtRowFn = convertDstRow_NRGBA
-	fp.convertDstIndirect(cctx)
+	wc.cvtRowFn = convertDstRow_NRGBA
+	fp.convertDstIndirect(wc)
 }
 
 func (fp *FPObject) convertFPToNRGBA(src *FPImage) (dst *image.NRGBA) {
@@ -302,14 +300,14 @@ func (fp *FPObject) convertFPToNRGBA(src *FPImage) (dst *image.NRGBA) {
 	return
 }
 
-func convertDstRow_RGBA(fp *FPObject, cctx *cvtFromFPContext, j int) {
+func convertDstRow_RGBA(fp *FPObject, wc *convertDstWorkContext, j int) {
 	var k int
 
-	fp.postProcessRow(cctx.src, j)
+	fp.postProcessRow(wc.src, j)
 
-	for i := 0; i < (cctx.src.Rect.Max.X - cctx.src.Rect.Min.X); i++ {
-		srcSam := cctx.src.Pix[j*cctx.src.Stride+i*4 : j*cctx.src.Stride+i*4+4]
-		dstSam := cctx.dstRGBA.Pix[j*cctx.dstRGBA.Stride+i*4 : j*cctx.dstRGBA.Stride+i*4+4]
+	for i := 0; i < (wc.src.Rect.Max.X - wc.src.Rect.Min.X); i++ {
+		srcSam := wc.src.Pix[j*wc.src.Stride+i*4 : j*wc.src.Stride+i*4+4]
+		dstSam := wc.dstRGBA.Pix[j*wc.dstRGBA.Stride+i*4 : j*wc.dstRGBA.Stride+i*4+4]
 
 		// Set the alpha sample
 		if !fp.hasTransparency {
@@ -320,10 +318,10 @@ func convertDstRow_RGBA(fp *FPObject, cctx *cvtFromFPContext, j int) {
 
 		// Do colorspace conversion if needed.
 		if fp.outputCCF != nil && dstSam[3] > 0 {
-			if cctx.outputLUT_Xto32 != nil {
+			if wc.outputLUT_Xto32 != nil {
 				// Do colorspace conversion using a lookup table.
 				for k = 0; k < 3; k++ {
-					srcSam[k] = cctx.outputLUT_Xto32[int(srcSam[k]*float32(cctx.outputLUT_Xto32_Size-1)+0.5)]
+					srcSam[k] = wc.outputLUT_Xto32[int(srcSam[k]*float32(wc.outputLUT_Xto32_Size-1)+0.5)]
 				}
 			} else {
 				// Do colorspace conversion the slow way.
@@ -347,14 +345,14 @@ func (fp *FPObject) convertDst_RGBA(src *FPImage) *image.RGBA {
 		return dst
 	}
 
-	cctx := new(cvtFromFPContext)
-	cctx.src = src
-	cctx.dstRGBA = image.NewRGBA(src.Bounds())
+	wc := new(convertDstWorkContext)
+	wc.src = src
+	wc.dstRGBA = image.NewRGBA(src.Bounds())
 
 	// Because we still need to convert to associated alpha after doing color conversion,
 	// the lookup table should return high-precision numbers -- uint8 is not enough.
-	cctx.outputLUT_Xto32_Size = 9885
-	cctx.outputLUT_Xto32 = fp.makeOutputLUT_Xto32(cctx.outputLUT_Xto32_Size)
+	wc.outputLUT_Xto32_Size = 9885
+	wc.outputLUT_Xto32 = fp.makeOutputLUT_Xto32(wc.outputLUT_Xto32_Size)
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to RGBA format")
@@ -362,20 +360,20 @@ func (fp *FPObject) convertDst_RGBA(src *FPImage) *image.RGBA {
 		fp.progressMsgf("Converting to target colorspace, and RGBA format")
 	}
 
-	cctx.cvtRowFn = convertDstRow_RGBA
-	fp.convertDstIndirect(cctx)
-	return cctx.dstRGBA
+	wc.cvtRowFn = convertDstRow_RGBA
+	fp.convertDstIndirect(wc)
+	return wc.dstRGBA
 }
 
-func convertDstRow_RGBA64orNRGBA64(fp *FPObject, cctx *cvtFromFPContext, j int) {
+func convertDstRow_RGBA64orNRGBA64(fp *FPObject, wc *convertDstWorkContext, j int) {
 	var dstSam [4]uint16
 	var dstPixelData []uint8
 	var k int
 
-	fp.postProcessRow(cctx.src, j)
+	fp.postProcessRow(wc.src, j)
 
-	for i := 0; i < (cctx.src.Rect.Max.X - cctx.src.Rect.Min.X); i++ {
-		srcSam := cctx.src.Pix[j*cctx.src.Stride+i*4 : j*cctx.src.Stride+i*4+4]
+	for i := 0; i < (wc.src.Rect.Max.X - wc.src.Rect.Min.X); i++ {
+		srcSam := wc.src.Pix[j*wc.src.Stride+i*4 : j*wc.src.Stride+i*4+4]
 
 		// Set the alpha sample
 		if !fp.hasTransparency {
@@ -389,18 +387,18 @@ func convertDstRow_RGBA64orNRGBA64(fp *FPObject, cctx *cvtFromFPContext, j int) 
 			fp.outputCCF(srcSam[0:3])
 		}
 
-		if cctx.isNRGBA64 {
+		if wc.isNRGBA64 {
 			// Calculate the non-alpha samples.
 			for k = 0; k < 3; k++ {
 				dstSam[k] = uint16(srcSam[k]*65535.0 + 0.5)
 			}
 			// Locate this pixel in the target image.
-			dstPixelData = cctx.dstNRGBA64.Pix[j*cctx.dstNRGBA64.Stride+i*8 : j*cctx.dstNRGBA64.Stride+i*8+8]
+			dstPixelData = wc.dstNRGBA64.Pix[j*wc.dstNRGBA64.Stride+i*8 : j*wc.dstNRGBA64.Stride+i*8+8]
 		} else { // RGBA64 format
 			for k = 0; k < 3; k++ {
 				dstSam[k] = uint16((srcSam[k]*srcSam[3])*65535.0 + 0.5)
 			}
-			dstPixelData = cctx.dstRGBA64.Pix[j*cctx.dstRGBA64.Stride+i*8 : j*cctx.dstRGBA64.Stride+i*8+8]
+			dstPixelData = wc.dstRGBA64.Pix[j*wc.dstRGBA64.Stride+i*8 : j*wc.dstRGBA64.Stride+i*8+8]
 		}
 
 		// Convert all samples to final RGBA/NRGBA format (big endian uint16)
@@ -412,10 +410,10 @@ func convertDstRow_RGBA64orNRGBA64(fp *FPObject, cctx *cvtFromFPContext, j int) 
 }
 
 func (fp *FPObject) convertDst_NRGBA64(src *FPImage) *image.NRGBA64 {
-	cctx := new(cvtFromFPContext)
-	cctx.src = src
-	cctx.isNRGBA64 = true
-	cctx.dstNRGBA64 = image.NewNRGBA64(src.Bounds())
+	wc := new(convertDstWorkContext)
+	wc.src = src
+	wc.isNRGBA64 = true
+	wc.dstNRGBA64 = image.NewNRGBA64(src.Bounds())
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to NRGBA64 format")
@@ -423,16 +421,16 @@ func (fp *FPObject) convertDst_NRGBA64(src *FPImage) *image.NRGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and NRGBA64 format")
 	}
 
-	cctx.cvtRowFn = convertDstRow_RGBA64orNRGBA64
-	fp.convertDstIndirect(cctx)
-	return cctx.dstNRGBA64
+	wc.cvtRowFn = convertDstRow_RGBA64orNRGBA64
+	fp.convertDstIndirect(wc)
+	return wc.dstNRGBA64
 }
 
 func (fp *FPObject) convertDst_RGBA64(src *FPImage) *image.RGBA64 {
-	cctx := new(cvtFromFPContext)
-	cctx.src = src
-	cctx.isNRGBA64 = false
-	cctx.dstRGBA64 = image.NewRGBA64(src.Bounds())
+	wc := new(convertDstWorkContext)
+	wc.src = src
+	wc.isNRGBA64 = false
+	wc.dstRGBA64 = image.NewRGBA64(src.Bounds())
 
 	if fp.outputCCF == nil {
 		fp.progressMsgf("Converting to RGBA64 format")
@@ -440,7 +438,7 @@ func (fp *FPObject) convertDst_RGBA64(src *FPImage) *image.RGBA64 {
 		fp.progressMsgf("Converting to target colorspace, and RGBA64 format")
 	}
 
-	cctx.cvtRowFn = convertDstRow_RGBA64orNRGBA64
-	fp.convertDstIndirect(cctx)
-	return cctx.dstRGBA64
+	wc.cvtRowFn = convertDstRow_RGBA64orNRGBA64
+	fp.convertDstIndirect(wc)
+	return wc.dstRGBA64
 }

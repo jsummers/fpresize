@@ -39,10 +39,8 @@ func (fp *FPObject) makeInputLUT_Xto32(tableSize int) []float32 {
 	return tbl
 }
 
-type cvtInputRowFunc func(fp *FPObject, cctx *srcToFPWorkContext, j int)
-
 // Data that is constant for all workers.
-type srcToFPWorkContext struct {
+type convertSrcWorkContext struct {
 	inputLUT_8to32  []float32
 	inputLUT_16to32 []float32
 	dst             *FPImage
@@ -50,16 +48,16 @@ type srcToFPWorkContext struct {
 	src_AsRGBA      *image.RGBA
 	src_AsNRGBA     *image.NRGBA
 	src_AsYCbCr     *image.YCbCr
-	cvtRowFn        cvtInputRowFunc
+	cvtRowFn        func(fp *FPObject, cctx *convertSrcWorkContext, j int)
 }
 
-type srcToFPWorkItem struct {
+type convertSrcWorkItem struct {
 	j       int
 	stopNow bool
 }
 
 // Convert row j from fp.srcImage to wc.dst.
-func convertSrcRow_Any(fp *FPObject, wc *srcToFPWorkContext, j int) {
+func convertSrcRow_Any(fp *FPObject, wc *convertSrcWorkContext, j int) {
 	var srcSam16 [4]uint32 // Source RGBA samples (uint16 stored in uint32)
 	var k int
 
@@ -126,7 +124,7 @@ func convertSrcRow_Any(fp *FPObject, wc *srcToFPWorkContext, j int) {
 
 // Convert row j from wc.src_AsNRGBA to wc.dst.
 // This is an optimized version of convertSrcRow_Any().
-func convertSrcRow_NRGBA(fp *FPObject, wc *srcToFPWorkContext, j int) {
+func convertSrcRow_NRGBA(fp *FPObject, wc *convertSrcWorkContext, j int) {
 	var k int
 
 	for i := 0; i < fp.srcW; i++ {
@@ -176,7 +174,7 @@ func convertSrcRow_NRGBA(fp *FPObject, wc *srcToFPWorkContext, j int) {
 
 // Convert row j from wc.src_AsRGBA to wc.dst.
 // This is an optimized version of convertSrcRow_Any().
-func convertSrcRow_RGBA(fp *FPObject, wc *srcToFPWorkContext, j int) {
+func convertSrcRow_RGBA(fp *FPObject, wc *convertSrcWorkContext, j int) {
 	var k int
 
 	for i := 0; i < fp.srcW; i++ {
@@ -245,7 +243,7 @@ func convertSrcRow_RGBA(fp *FPObject, wc *srcToFPWorkContext, j int) {
 //
 // Although not very optimized, it's still well over twice as fast as using
 // convertSrcRow_Any would be.
-func convertSrcRow_YCbCr(fp *FPObject, wc *srcToFPWorkContext, j int) {
+func convertSrcRow_YCbCr(fp *FPObject, wc *convertSrcWorkContext, j int) {
 	var k int
 
 	for i := 0; i < fp.srcW; i++ {
@@ -285,7 +283,7 @@ func convertSrcRow_YCbCr(fp *FPObject, wc *srcToFPWorkContext, j int) {
 	}
 }
 
-func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFPWorkItem) {
+func (fp *FPObject) convertSrcWorker(wc *convertSrcWorkContext, workQueue chan convertSrcWorkItem) {
 	for {
 		wi := <-workQueue
 		if wi.stopNow {
@@ -297,17 +295,17 @@ func (fp *FPObject) srcToFPWorker(wc *srcToFPWorkContext, workQueue chan srcToFP
 }
 
 // Copies(&converts) from fp.srcImg to the given image.
-func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
+func (fp *FPObject) convertSrc(src image.Image, dst *FPImage) error {
 	var i int
 	var j int
 	var nSamples int
-	var wi srcToFPWorkItem
+	var wi convertSrcWorkItem
 
 	if int64(fp.srcW)*int64(fp.srcH) > maxImagePixels {
 		return errors.New("Source image too large to process")
 	}
 
-	wc := new(srcToFPWorkContext)
+	wc := new(convertSrcWorkContext)
 	wc.dst = dst
 	wc.srcImage = src
 
@@ -343,10 +341,10 @@ func (fp *FPObject) convertSrcToFP(src image.Image, dst *FPImage) error {
 	nSamples = dst.Stride * fp.srcH
 	dst.Pix = make([]float32, nSamples)
 
-	workQueue := make(chan srcToFPWorkItem)
+	workQueue := make(chan convertSrcWorkItem)
 
 	for i = 0; i < fp.numWorkers; i++ {
-		go fp.srcToFPWorker(wc, workQueue)
+		go fp.convertSrcWorker(wc, workQueue)
 	}
 
 	// Each row is a "work item". Send each row to a worker.

@@ -607,7 +607,7 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 		}
 
 		fp.srcFPImage = new(FPImage)
-		err = fp.convertSrcToFP(fp.srcImage, fp.srcFPImage)
+		err = fp.convertSrc(fp.srcImage, fp.srcFPImage)
 		if err != nil {
 			return nil, err
 		}
