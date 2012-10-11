@@ -234,34 +234,39 @@ func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 	return weightList
 }
 
-type resampleWorkItem struct {
-	// src* and dst* are references to a set of samples within (presumably) a FPImage object.
-	// Sam[Stride*0] is the first sample; Sam[Stride*1] is the next, ...
-	srcSam     []float32
-	dstSam     []float32
+// Data that is constant for all workers.
+type resampleWorkContext struct {
+	weightList []fpWeight
 	srcStride  int
 	dstStride  int
-	weightList []fpWeight
-	stopNow    bool
+}
+
+type resampleWorkItem struct {
+	// src* and dst* are references to a set of samples within (presumably) a FPImage object.
+	// Sam[wc.Stride*0] is the first sample; Sam[wc.Stride*1] is the next, ...
+	srcSam  []float32
+	dstSam  []float32
+	stopNow bool
 }
 
 // Read workItems (each representing a row or column to resample) from workQueue,
 // and resample them.
-func resampleWorker(workQueue chan resampleWorkItem) {
+func resampleWorker(wc *resampleWorkContext, workQueue chan resampleWorkItem) {
 	var wi resampleWorkItem
 
 	for {
-		// Get next thing to do
-		wi = <-workQueue
+		wi = <-workQueue // Get next thing to do.
+
 		if wi.stopNow {
 			return
 		}
 
-		for i := range wi.weightList {
-			if wi.weightList[i].srcSamIdx >= 0 {
+		// Resample one row or column.
+		for i := range wc.weightList {
+			if wc.weightList[i].srcSamIdx >= 0 {
 				// Not a (transparent) virtual pixel
-				wi.dstSam[wi.weightList[i].dstSamIdx*wi.dstStride] += wi.srcSam[wi.weightList[i].srcSamIdx*
-					wi.srcStride] * wi.weightList[i].weight
+				wi.dstSam[wc.weightList[i].dstSamIdx*wc.dstStride] += wi.srcSam[wc.weightList[i].srcSamIdx*
+					wc.srcStride] * wc.weightList[i].weight
 			}
 		}
 	}
@@ -277,6 +282,7 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 
 	fp.progressMsgf("Changing height, %d -> %d", fp.srcH, fp.dstCanvasH)
 
+	wc := new(resampleWorkContext)
 	dst = new(FPImage)
 
 	w = src.Rect.Max.X - src.Rect.Min.X
@@ -290,16 +296,16 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 	nSamples = dst.Stride * fp.dstCanvasH
 	dst.Pix = make([]float32, nSamples)
 
-	wi.weightList = fp.createWeightList(true)
+	wc.weightList = fp.createWeightList(true)
 
-	wi.srcStride = src.Stride
-	wi.dstStride = dst.Stride
+	wc.srcStride = src.Stride
+	wc.dstStride = dst.Stride
 
 	workQueue := make(chan resampleWorkItem)
 
 	// Start workers
 	for i = 0; i < fp.numWorkers; i++ {
-		go resampleWorker(workQueue)
+		go resampleWorker(wc, workQueue)
 	}
 
 	// Iterate over the columns (of which src and dst have the same number)
@@ -333,6 +339,7 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 
 	fp.progressMsgf("Changing width, %d -> %d", fp.srcW, fp.dstCanvasW)
 
+	wc := new(resampleWorkContext)
 	dst = new(FPImage)
 
 	h = src.Rect.Max.Y - src.Rect.Min.Y
@@ -345,15 +352,15 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	nSamples = dst.Stride * h
 	dst.Pix = make([]float32, nSamples)
 
-	wi.weightList = fp.createWeightList(false)
+	wc.weightList = fp.createWeightList(false)
 
-	wi.srcStride = 4
-	wi.dstStride = 4
+	wc.srcStride = 4
+	wc.dstStride = 4
 
 	workQueue := make(chan resampleWorkItem)
 
 	for i = 0; i < fp.numWorkers; i++ {
-		go resampleWorker(workQueue)
+		go resampleWorker(wc, workQueue)
 	}
 
 	// Iterate over the rows (of which src and dst have the same number)
