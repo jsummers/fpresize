@@ -136,6 +136,8 @@ func resizeMain(options *options_type) error {
 		fp.SetFilter(fpresize.MakeCubicFilter(0.0, 0.5))
 	} else if options.filterName == "hermite" {
 		fp.SetFilter(fpresize.MakeCubicFilter(0.0, 0.0))
+	} else if options.filterName == "bspline" {
+		fp.SetFilter(fpresize.MakeCubicFilter(1.0, 0.0))
 	} else if options.filterName == "gaussian" {
 		fp.SetFilter(fpresize.MakeGaussianFilter())
 	} else if options.filterName == "triangle" {
@@ -224,8 +226,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  fpr -h <height> [options] <source-file> <target-file>\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "  Available filters: lanczos, lanczos2, catrom, mitchell, hermite, gaussian,\n");
-		fmt.Fprintf(os.Stderr, "    mix, boxavg, triangle\n")
+		fmt.Fprintf(os.Stderr, "  Available filters: lanczos, lanczos2, catrom, mitchell, hermite, bspline,\n")
+		fmt.Fprintf(os.Stderr, "    gaussian, mix, boxavg, triangle\n")
 	}
 
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
