@@ -120,7 +120,6 @@ func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 	var radius float64
 	var weightList []fpWeight
 	var weightsUsed int
-	var weightListCap int
 	var srcN_flt float64 = float64(srcN)
 	var scaleFactor float64 = dstTrueN / srcN_flt
 	var filter *Filter
@@ -149,10 +148,9 @@ func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 		filterFlags = filter.Flags(scaleFactor)
 	}
 
-	// TODO: Review this formula to make sure it's good enough,
-	// and/or dynamically increase the capacity of the weightList
-	// slice on demand.
-	weightListCap = int((1.01+2.0*radius*reductionFactor)*float64(dstCanvasN)) + 2
+	// Allocate a weight list, whose size is based on the maximum number of times
+	// the nested loops below can execute.
+	weightListCap := int(1.0 + (1.01+2.0*radius*reductionFactor)*float64(dstCanvasN))
 	weightList = make([]fpWeight, weightListCap)
 
 	var dstSamIdx int
@@ -330,7 +328,6 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 }
 
 // Create dst, an image with a different width than src.
-// TODO: Maybe merge resizeWidth & resizeHeight
 func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	var nSamples int
 	var h int // height of both images
