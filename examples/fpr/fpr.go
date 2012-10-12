@@ -86,6 +86,41 @@ func getFileFormatByFilename(fn string) int {
 	return ffUnknown
 }
 
+// An example of a custom filter.
+// Return a filter that emulates a nearest-neighbor resize.
+// Ties are broken in favor of the pixel to the right or bottom.
+func makeNearestNeighborFilter() *fpresize.Filter {
+	f := new(fpresize.Filter)
+	f.F = func(x float64, scaleFactor float64) float64 {
+		var n float64
+		if scaleFactor < 1.0 {
+			n = scaleFactor
+		} else {
+			n = 1.0
+		}
+		// Using exactly 0.5 would leave us at the mercy of floating point
+		// roundoff error, possibly causing there to be 0 or 2 source pixels
+		// within the filter's domain. For nearest-neighbor, there must always
+		// be exactly 1. So we add a small fudge factor.
+		if x >= -0.4999999*n && x<= 0.5000001*n {
+			return 1.0
+		}
+		return 0.0
+	}
+	f.Radius = func(scaleFactor float64) float64 {
+		// It's okay if Radius is a little larger than it needs to be,
+		// but it's important that it not be too small.
+		if scaleFactor < 1.0 {
+			return scaleFactor/2.0 + 0.0001
+		}
+		return 0.5001
+	}
+	f.Flags = func(scaleFactor float64) uint32 {
+		return fpresize.FilterFlagAsymmetric
+	}
+	return f
+}
+
 func resizeMain(options *options_type) error {
 	var err error
 	var srcBounds image.Rectangle
@@ -144,6 +179,8 @@ func resizeMain(options *options_type) error {
 		fp.SetFilter(fpresize.MakeTriangleFilter())
 	} else if options.filterName == "boxavg" {
 		fp.SetFilter(fpresize.MakeBoxAvgFilter())
+	} else if options.filterName == "nearest" {
+		fp.SetFilter(makeNearestNeighborFilter())
 	} else {
 		return fmt.Errorf("Unrecognized filter %+q", options.filterName)
 	}
@@ -227,7 +264,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  fpr -h <height> [options] <source-file> <target-file>\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "  Available filters: lanczos, lanczos2, catrom, mitchell, hermite, bspline,\n")
-		fmt.Fprintf(os.Stderr, "    gaussian, mix, boxavg, triangle\n")
+		fmt.Fprintf(os.Stderr, "    gaussian, mix, boxavg, nearest, triangle\n")
 	}
 
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
