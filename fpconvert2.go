@@ -24,7 +24,7 @@ func (fp *FPObject) makeOutputLUT_Xto8(tableSize int) []uint8 {
 	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
 		return nil
 	}
-	if fp.dstCanvasW*fp.dstCanvasH < 16384 {
+	if fp.dstCanvasW*fp.dstCanvasH < (tableSize/4)*fp.numWorkers {
 		return nil
 	}
 
@@ -68,7 +68,7 @@ func (fp *FPObject) makeOutputLUT_Xto32(tableSize int) []float32 {
 	if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
 		return nil
 	}
-	if fp.dstCanvasW*fp.dstCanvasH < 16384 {
+	if fp.dstCanvasW*fp.dstCanvasH < (tableSize/4)*fp.numWorkers {
 		return nil
 	}
 
