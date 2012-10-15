@@ -103,10 +103,18 @@ func fixupFilterArg(filterFlags uint32, x float64) float64 {
 }
 
 // Create and return a weightlist for the given dimension, using fp.filter.
-func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
+func (fp *FPObject) createWeightList(isVertical bool) (weightList []fpWeight) {
+	var filter *Filter
+	var radius float64
+	var filterFlags uint32
 	var srcN, dstCanvasN int
+	var srcN_flt float64
 	var dstTrueN float64
 	var dstOffset float64
+	var scaleFactor float64
+	var reductionFactor float64
+	var weightsUsed int
+
 	if isVertical {
 		srcN, dstCanvasN = fp.srcH, fp.dstCanvasH
 		dstTrueN = fp.dstTrueH
@@ -116,20 +124,15 @@ func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 		dstTrueN = fp.dstTrueW
 		dstOffset = fp.dstOffsetX
 	}
-	var reductionFactor float64
-	var radius float64
-	var weightList []fpWeight
-	var weightsUsed int
-	var srcN_flt float64 = float64(srcN)
-	var scaleFactor float64 = dstTrueN / srcN_flt
-	var filter *Filter
-	var filterFlags uint32
+	srcN_flt = float64(srcN)
+	scaleFactor = dstTrueN / srcN_flt
 
 	if dstTrueN < srcN_flt {
 		reductionFactor = srcN_flt / dstTrueN
 	} else {
 		reductionFactor = 1.0
 	}
+
 	if fp.blurGetter != nil {
 		reductionFactor *= fp.blurGetter(isVertical)
 	}
@@ -153,34 +156,22 @@ func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 	weightListCap := int(1.0 + (1.01+2.0*radius*reductionFactor)*float64(dstCanvasN))
 	weightList = make([]fpWeight, weightListCap)
 
-	var dstSamIdx int
-	var posInSrc float64
-	var firstSrcSamIdx int
-	var lastSrcSamIdx int
-	var idxOfFirstWeight int
-	var v float64
-	var v_norm float64
-	var v_count int
-	var srcSamIdx int
-	var arg float64
-	var isVirtual bool
-	var i int
+	for dstSamIdx := 0; dstSamIdx < dstCanvasN; dstSamIdx++ {
+		var v_norm float64 // Sum of the filter values for the current sample
+		var v_count int    // Number of weights used by the current sample
 
-	for dstSamIdx = 0; dstSamIdx < dstCanvasN; dstSamIdx++ {
-		// Figure out the range of source samples that are relevent to this dst sample.
-		posInSrc = ((0.5+float64(dstSamIdx)-dstOffset)/dstTrueN)*srcN_flt - 0.5
-		firstSrcSamIdx = int(math.Ceil(posInSrc - radius*reductionFactor - 0.0001))
-		lastSrcSamIdx = int(math.Floor(posInSrc + radius*reductionFactor + 0.0001))
-
-		// Remember which item in the weightlist was the first one for this
-		// target sample.
-		idxOfFirstWeight = weightsUsed
+		// Figure out the range of src samples that are relevent to this dst sample.
+		posInSrc := ((0.5+float64(dstSamIdx)-dstOffset)/dstTrueN)*srcN_flt - 0.5
+		firstSrcSamIdx := int(math.Ceil(posInSrc - radius*reductionFactor - 0.0001))
+		lastSrcSamIdx := int(math.Floor(posInSrc + radius*reductionFactor + 0.0001))
 
 		v_norm = 0.0
 		v_count = 0
 
 		// Iterate through the input samples that affect this output sample
-		for srcSamIdx = firstSrcSamIdx; srcSamIdx <= lastSrcSamIdx; srcSamIdx++ {
+		for srcSamIdx := firstSrcSamIdx; srcSamIdx <= lastSrcSamIdx; srcSamIdx++ {
+			var isVirtual bool
+
 			if srcSamIdx >= 0 && srcSamIdx < srcN {
 				isVirtual = false
 			} else {
@@ -190,9 +181,10 @@ func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 				isVirtual = true
 			}
 
-			arg = (float64(srcSamIdx) - posInSrc) / reductionFactor
-
-			v = filter.F(fixupFilterArg(filterFlags, arg), scaleFactor)
+			// arg is the value passed to the filter function;
+			// v is the value returned by the filter function.
+			arg := (float64(srcSamIdx) - posInSrc) / reductionFactor
+			v := filter.F(fixupFilterArg(filterFlags, arg), scaleFactor)
 			if v == 0.0 {
 				continue
 			}
@@ -215,21 +207,20 @@ func (fp *FPObject) createWeightList(isVertical bool) []fpWeight {
 			continue
 		}
 
-		// Normalize the weights we just added
-
 		if math.Abs(v_norm) < 0.000001 {
 			// This shouldn't happen (with a sane filter), but just to protect
 			// against division-by-zero...
 			v_norm = 0.000001
 		}
 
-		for i = idxOfFirstWeight; i < weightsUsed; i++ {
-			weightList[i].weight /= float32(v_norm)
+		// Normalize the weights we just added
+		for w := weightsUsed - v_count; w < weightsUsed; w++ {
+			weightList[w].weight /= float32(v_norm)
 		}
 	}
 
-	weightList = weightList[0:weightsUsed] // Re-slice, to set len(weightList)
-	return weightList
+	weightList = weightList[:weightsUsed] // Re-slice, to set len(weightList)
+	return
 }
 
 // Data that is constant for all workers.
