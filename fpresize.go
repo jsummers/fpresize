@@ -508,17 +508,33 @@ func (fp *FPObject) SetOutputColorConverterFlags(flags uint32) {
 	fp.outputCCFFlags = flags
 }
 
-// SetTargetBounds sets the size and origin of the resized image.
-// The source image will be mapped onto the given bounds.
-// It also sets the VirtualPixels setting to None.
-func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
+// This sets the target image bounds to match the canvas bounds, so if
+// that's not the case, the image bounds need to be set after calling this
+// method, not before.
+func (fp *FPObject) setTargetCanvasBounds(dstBounds image.Rectangle) {
 	fp.dstBounds = dstBounds
+	if fp.dstBounds.Max.X < fp.dstBounds.Min.X+1 {
+		fp.dstBounds.Max.X = fp.dstBounds.Min.X + 1
+	}
+	if fp.dstBounds.Max.Y < fp.dstBounds.Min.Y+1 {
+		fp.dstBounds.Max.Y = fp.dstBounds.Min.Y + 1
+	}
 	fp.dstCanvasW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
 	fp.dstCanvasH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
 	fp.dstOffsetX = 0.0
 	fp.dstOffsetY = 0.0
 	fp.dstTrueW = float64(fp.dstCanvasW)
 	fp.dstTrueH = float64(fp.dstCanvasH)
+}
+
+// SetTargetBounds sets the size and origin of the resized image.
+// The source image will be mapped onto the given bounds.
+// It also sets the VirtualPixels setting to None.
+// 
+// If the height or width is less than 1, the bounds will be adjusted
+// so that it is 1.
+func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
+	fp.setTargetCanvasBounds(dstBounds)
 	fp.virtualPixels = VirtualPixelsNone
 }
 
@@ -536,9 +552,7 @@ func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 // image will be mapped.
 func (fp *FPObject) SetTargetBoundsAdvanced(dstBounds image.Rectangle,
 	x1, y1, x2, y2 float64) {
-	fp.dstBounds = dstBounds
-	fp.dstCanvasW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
-	fp.dstCanvasH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
+	fp.setTargetCanvasBounds(dstBounds)
 	fp.dstOffsetX = x1 - float64(fp.dstBounds.Min.X)
 	fp.dstOffsetY = y1 - float64(fp.dstBounds.Min.Y)
 	fp.dstTrueW = x2 - x1

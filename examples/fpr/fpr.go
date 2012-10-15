@@ -102,7 +102,7 @@ func makeNearestNeighborFilter() *fpresize.Filter {
 		// roundoff error, possibly causing there to be 0 or 2 source pixels
 		// within the filter's domain. For nearest-neighbor, there must always
 		// be exactly 1. So we add a small fudge factor.
-		if x >= -0.4999999*n && x<= 0.5000001*n {
+		if x >= -0.4999999*n && x <= 0.5000001*n {
 			return 1.0
 		}
 		return 0.0
@@ -134,8 +134,6 @@ func resizeMain(options *options_type) error {
 
 	// Allow more than one thread to be used by this process, if more than one CPU exists.
 	runtime.GOMAXPROCS(runtime.NumCPU())
-
-	dstH = options.height
 
 	outputFileFormat = getFileFormatByFilename(options.dstFilename)
 	if outputFileFormat == ffUnknown {
@@ -201,16 +199,22 @@ func resizeMain(options *options_type) error {
 		fp.SetBlur(options.blur)
 	}
 
-	// Decide on the width of the resized image.
+	// Decide the size of the resized image.
 	srcBounds = srcImg.Bounds()
 	srcW = srcBounds.Max.X - srcBounds.Min.X
 	srcH = srcBounds.Max.Y - srcBounds.Min.Y
-	dstW = int(0.5 + (float64(srcW)/float64(srcH))*float64(dstH))
-	if dstW < 1 {
-		dstW = 1
-	}
-	if dstH < 1 {
-		dstH = 1
+	if options.height > 0 && options.width > 0 {
+		// Use the exact dimensions given
+		dstW = options.width
+		dstH = options.height
+	} else if options.height > 0 {
+		// Fit to height
+		dstH = options.height
+		dstW = int(0.5 + (float64(srcW)/float64(srcH))*float64(dstH))
+	} else {
+		// Fit to width
+		dstW = options.width
+		dstH = int(0.5 + (float64(srcH)/float64(srcW))*float64(dstW))
 	}
 	fp.SetTargetBounds(image.Rect(0, 0, dstW, dstH))
 
@@ -245,6 +249,7 @@ func resizeMain(options *options_type) error {
 }
 
 type options_type struct {
+	width       int
 	height      int
 	srcFilename string
 	dstFilename string
@@ -261,13 +266,14 @@ func main() {
 	// Replace the standard flag.Usage function
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  fpr -h <height> [options] <source-file> <target-file>\n")
+		fmt.Fprintf(os.Stderr, "  fpr (-w|-h) <n> [options] <source-file> <target-file>\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "  Available filters: lanczos, lanczos2, catrom, mitchell, hermite, bspline,\n")
 		fmt.Fprintf(os.Stderr, "    gaussian, mix, boxavg, nearest, triangle\n")
 	}
 
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
+	flag.IntVar(&options.width, "w", 0, "Target image width, in pixels")
 	flag.StringVar(&options.filterName, "filter", "auto", "Resampling filter to use")
 	flag.Float64Var(&options.blur, "blur", 1.0, "Amount to blur")
 	flag.BoolVar(&options.noGamma, "nogamma", false, "Disable color correction")
@@ -280,7 +286,7 @@ func main() {
 		return
 	}
 
-	if options.height < 1 {
+	if options.width < 1 && options.height < 1 {
 		flag.Usage()
 		return
 	}
