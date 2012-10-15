@@ -150,6 +150,10 @@ func resizeMain(options *options_type) error {
 
 	fp.SetProgressCallback(func(msg string) { progressMsg(options, msg) })
 
+	if options.numThreads > 0 {
+		fp.SetMaxWorkerThreads(options.numThreads)
+	}
+
 	if options.noGamma {
 		// To do colorspace-unaware resizing, call the following methods:
 		fp.SetInputColorConverter(nil)
@@ -256,6 +260,7 @@ type options_type struct {
 	filterName  string
 	blur        float64
 	noGamma     bool
+	numThreads  int
 	verbose     bool
 	debug       bool
 }
@@ -277,6 +282,7 @@ func main() {
 	flag.StringVar(&options.filterName, "filter", "auto", "Resampling filter to use")
 	flag.Float64Var(&options.blur, "blur", 1.0, "Amount to blur")
 	flag.BoolVar(&options.noGamma, "nogamma", false, "Disable color correction")
+	flag.IntVar(&options.numThreads, "threads", 0, "Maximum number of worker threads")
 	flag.BoolVar(&options.verbose, "verbose", false, "Verbose output")
 	flag.BoolVar(&options.debug, "debug", false, "Debugging output")
 	flag.Parse()
