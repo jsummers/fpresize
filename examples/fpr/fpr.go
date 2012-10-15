@@ -160,30 +160,31 @@ func resizeMain(options *options_type) error {
 		fp.SetOutputColorConverter(nil)
 	}
 
-	if options.filterName == "auto" {
-	} else if options.filterName == "lanczos2" {
+	switch options.filterName {
+	case "auto":
+	case "lanczos2":
 		fp.SetFilter(fpresize.MakeLanczosFilter(2))
-	} else if options.filterName == "lanczos3" || options.filterName == "lanczos" {
+	case "lanczos3", "lanczos":
 		fp.SetFilter(fpresize.MakeLanczosFilter(3))
-	} else if options.filterName == "mix" {
+	case "mix":
 		fp.SetFilter(fpresize.MakePixelMixingFilter())
-	} else if options.filterName == "mitchell" {
+	case "mitchell":
 		fp.SetFilter(fpresize.MakeCubicFilter(1.0/3.0, 1.0/3.0))
-	} else if options.filterName == "catrom" {
+	case "catrom":
 		fp.SetFilter(fpresize.MakeCubicFilter(0.0, 0.5))
-	} else if options.filterName == "hermite" {
+	case "hermite":
 		fp.SetFilter(fpresize.MakeCubicFilter(0.0, 0.0))
-	} else if options.filterName == "bspline" {
+	case "bspline":
 		fp.SetFilter(fpresize.MakeCubicFilter(1.0, 0.0))
-	} else if options.filterName == "gaussian" {
+	case "gaussian":
 		fp.SetFilter(fpresize.MakeGaussianFilter())
-	} else if options.filterName == "triangle" {
+	case "triangle":
 		fp.SetFilter(fpresize.MakeTriangleFilter())
-	} else if options.filterName == "boxavg" {
+	case "boxavg":
 		fp.SetFilter(fpresize.MakeBoxAvgFilter())
-	} else if options.filterName == "nearest" {
+	case "nearest":
 		fp.SetFilter(makeNearestNeighborFilter())
-	} else {
+	default:
 		return fmt.Errorf("Unrecognized filter %+q", options.filterName)
 	}
 
@@ -242,11 +243,9 @@ func resizeMain(options *options_type) error {
 		return err
 	}
 
+	progressMsg(options, "Done")
 	if options.debug {
-		progressMsg(options, "Done")
 		fmt.Printf("Total time: %v\n", time.Now().Sub(startTime))
-	} else {
-		progressMsg(options, "Done")
 	}
 
 	return nil

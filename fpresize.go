@@ -313,7 +313,7 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 			wi.srcSam = src.Pix[col:]
 			wi.dstSam = dst.Pix[col:]
 			// Assign the work to whatever worker happens to be available to receive it.
-			// Note that this stuct is passed by value, so it's okay to modify it and
+			// Note that this struct is passed by value, so it's okay to modify it and
 			// pass it again.
 			workQueue <- wi
 		}

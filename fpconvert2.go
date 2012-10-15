@@ -39,6 +39,16 @@ func (fp *FPObject) makeOutputLUT_Xto8(tableSize int) []uint8 {
 
 	tbl := make([]uint8, tableSize)
 	for i = 0; i < tableSize; i++ {
+		// This is not perfect.
+		// Of the 256 available target-colorspace values, what we really want
+		// is the one that is nearest in a *linear* colorspace.
+		// But here we are converting to the target colorspace, then choosing
+		// the nearest color in that colorspace.
+		// The likely effect is that a small percentage of samples are one
+		// shade too light. With 256 shades, that's too small a difference to
+		// be noticeable. And doing it correctly could be quite a bit slower.
+		// (This issue occurs for all non-floating-point target image types,
+		// not just those that use this code specifically.)
 		tbl[i] = uint8(tempTable[i]*255.0 + 0.5)
 	}
 	return tbl
@@ -269,7 +279,8 @@ func convertDstRow_NRGBA(fp *FPObject, wc *convertDstWorkContext, j int) {
 // src is floating point, linear colorspace, unassociated alpha
 // dst is uint8, target colorspace, unassociated alpha
 // It's okay to modify src's pixels; it's about to be thrown away.
-func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstStride int) {
+func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstStride int,
+	formatName string) {
 	wc := new(convertDstWorkContext)
 	wc.src = src
 	wc.dstPix = dstPix
@@ -278,16 +289,16 @@ func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstS
 	// This table size is optimized for sRGB. The sRGB curve's slope for
 	// the darkest colors (the ones we're most concerned about) is 12.92,
 	// so our table needs to have around 256*12.92 or more entries to ensure
-	// that it includes every possible color value. A size of 255*12.92*3+1 =
-	// 9885 improves precision, and makes the dark colors almost always
+	// that it includes every possible color value. A size of 9885 ≈
+	// 255*12.92*3+1 improves precision, and makes the dark colors almost always
 	// round correctly.
 	wc.outputLUT_Xto8_Size = 9885
 	wc.outputLUT_Xto8 = fp.makeOutputLUT_Xto8(wc.outputLUT_Xto8_Size)
 
 	if fp.outputCCF == nil {
-		fp.progressMsgf("Converting to NRGBA format")
+		fp.progressMsgf("Converting to %s format", formatName)
 	} else {
-		fp.progressMsgf("Converting to target colorspace, and NRGBA format")
+		fp.progressMsgf("Converting to target colorspace, and %s format", formatName)
 	}
 
 	wc.cvtRowFn = convertDstRow_NRGBA
@@ -296,7 +307,7 @@ func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstS
 
 func (fp *FPObject) convertFPToNRGBA(src *FPImage) (dst *image.NRGBA) {
 	dst = image.NewNRGBA(src.Bounds())
-	fp.convertDst_NRGBA_internal(src, dst.Pix, dst.Stride)
+	fp.convertDst_NRGBA_internal(src, dst.Pix, dst.Stride, "NRGBA")
 	return
 }
 
@@ -341,7 +352,7 @@ func (fp *FPObject) convertDst_RGBA(src *FPImage) *image.RGBA {
 		// If the image has no transparency, use convertDst_NRGBA_internal,
 		// which is usually somewhat faster.
 		dst := image.NewRGBA(src.Bounds())
-		fp.convertDst_NRGBA_internal(src, dst.Pix, dst.Stride)
+		fp.convertDst_NRGBA_internal(src, dst.Pix, dst.Stride, "RGB")
 		return dst
 	}
 
