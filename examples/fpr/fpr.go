@@ -53,6 +53,8 @@ func writeImageToFile(img image.Image, dstFilename string, outputFileFormat int)
 }
 
 var startTime time.Time
+var processingStartTime time.Time
+var processingStopTime time.Time
 var lastMsgTime time.Time
 
 func progressMsg(options *options_type, msg string) {
@@ -146,6 +148,10 @@ func resizeMain(options *options_type) error {
 		return err
 	}
 
+	// Also track the total time it takes to do the resize (i.e. don't count
+	// the time it takes to read and write the files).
+	processingStartTime = time.Now()
+
 	fp := fpresize.New(srcImg)
 
 	fp.SetProgressCallback(func(msg string) { progressMsg(options, msg) })
@@ -233,6 +239,8 @@ func resizeMain(options *options_type) error {
 		return err
 	}
 
+	processingStopTime = time.Now()
+
 	progressMsg(options, "Writing target file")
 	if nrgbaResizedImage != nil {
 		err = writeImageToFile(nrgbaResizedImage, options.dstFilename, outputFileFormat)
@@ -245,6 +253,7 @@ func resizeMain(options *options_type) error {
 
 	progressMsg(options, "Done")
 	if options.debug {
+		fmt.Printf("Processing time: %v\n", processingStopTime.Sub(processingStartTime))
 		fmt.Printf("Total time: %v\n", time.Now().Sub(startTime))
 	}
 
