@@ -25,25 +25,41 @@ Documentation
 The documentation may be read online at
 [GoPkgDoc](http://go.pkgdoc.org/github.com/jsummers/fpresize).
 
-
 Or, after installing, type:
 
     godoc github.com/jsummers/fpresize | more
 
 
-Other information
------------------
-
-I consider the API to be stable, and will try not to break
-backward-compatibility without good reason.
+Status
+------
 
 New features may be added in the future, but none are specifically
-planned. There is room to improve the performance (though it is very
-fast in most cases), documentation, code quality, and test suite.
+planned. I will try not to break backward-compatibility without good
+reason.
+
+Changes are likely to focus on performance. Although it is very fast
+in most cases, there is room for improvement.
+
+Fpresize always processes images as full-color RGBA. (It does avoid
+processing the alpha channel if the image has no transparency, though
+it still stores it.) Resizing a grayscale or alpha image is thus very
+inefficient, both in memory and speed. Optimized support for these
+image types may be added at some point.
+
+Its use of multithreading could be improved, by using fewer goroutines
+in some cases, and/or larger work items. It's difficult to know what
+parameters to use, as it depends on things like the computer's current
+workload, and the quality of Go's scheduler (which is expected to
+improve).
+
+
+Other information
+-----------------
 
 Parts of fpresize are based on my from my C library,
 [ImageWorsener](http://entropymine.com/imageworsener/).
 But fpresize has far fewer features, and is not *quite* as accurate.
+
 
 License
 -------
