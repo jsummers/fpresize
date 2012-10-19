@@ -34,7 +34,7 @@ Status
 ------
 
 New features may be added in the future, but none are specifically
-planned. I will try not to break backward-compatibility without good
+planned. I will try not to break API backward-compatibility without good
 reason.
 
 Changes are likely to focus on performance. Although it is very fast
@@ -53,10 +53,20 @@ workload, and the quality of Go's scheduler (which is expected to
 improve).
 
 
+Known bugs
+----------
+
+As of at least version 1.0.3 (2012/09/21), Go's standard PNG library has
+a bug that prevents it from correctly handling paletted PNG images with
+partial transparency. The bug has been fixed
+(<http://code.google.com/p/go/source/detail?r=f1acac08c808>; 2012/07/31),
+but I do not know when the fix will appear in a Go release.
+
+
 Other information
 -----------------
 
-Parts of fpresize are based on my from my C library,
+Parts of fpresize are based on my C library,
 [ImageWorsener](http://entropymine.com/imageworsener/).
 But fpresize has far fewer features, and is not *quite* as accurate.
 
