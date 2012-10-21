@@ -55,6 +55,14 @@ type FPObject struct {
 
 	numWorkers int // Number of worker goroutines we will use
 	maxWorkers int // Max number requested by caller. 0 = not set.
+
+	channelInfo [4]channelInfoType
+}
+
+type channelInfoType struct {
+	// False if this channel doesn't need to be processed (e.g. the
+	// alpha channel when the image is opaque).
+	mustProcess bool
 }
 
 const (
@@ -301,7 +309,7 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 	// Iterate over the columns (of which src and dst have the same number)
 	// Columns of *samples*, that is, not pixels.
 	for col := 0; col < 4*w; col++ {
-		if fp.mustProcessTransparency || (col%4 != 3) { // If no transparency, skip over the alpha samples
+		if fp.channelInfo[col%4].mustProcess {
 			wi.srcSam = src.Pix[col:]
 			wi.dstSam = dst.Pix[col:]
 			// Assign the work to whatever worker happens to be available to receive it.
@@ -356,7 +364,7 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	for row := 0; row < h; row++ {
 		// Iterate over R,G,B,A
 		for k := 0; k < 4; k++ {
-			if fp.mustProcessTransparency || k != 3 {
+			if fp.channelInfo[k].mustProcess {
 				wi.srcSam = src.Pix[row*src.Stride+k:]
 				wi.dstSam = dst.Pix[row*dst.Stride+k:]
 				workQueue <- wi
@@ -622,6 +630,15 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 	}
 
 	fp.mustProcessTransparency = (fp.srcHasTransparency || fp.virtualPixels == VirtualPixelsTransparent)
+
+	// Set the .channelInfo fields
+	for k := 0; k < 4; k++ {
+		if k == 3 && !fp.mustProcessTransparency {
+			fp.channelInfo[k].mustProcess = false
+		} else {
+			fp.channelInfo[k].mustProcess = true
+		}
+	}
 
 	// When changing the width, the relevant samples are close together in memory.
 	// When changing the height, they are much farther apart. On a modern computer,
