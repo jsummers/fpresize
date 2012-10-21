@@ -67,7 +67,7 @@ func convertSrcRow_Any(fp *FPObject, wc *convertSrcWorkContext, j int) {
 		srcSam16[0], srcSam16[1], srcSam16[2], srcSam16[3] = srcclr.RGBA()
 
 		if srcSam16[3] < 65535 {
-			fp.hasTransparency = true
+			fp.srcHasTransparency = true
 		}
 
 		// Identify the slice of samples representing this pixel in the
@@ -132,7 +132,7 @@ func convertSrcRow_NRGBA(fp *FPObject, wc *convertSrcWorkContext, j int) {
 		srcSam8 = wc.src_AsNRGBA.Pix[wc.src_AsNRGBA.Stride*j+4*i : wc.src_AsNRGBA.Stride*j+4*i+4]
 
 		if srcSam8[3] < 255 {
-			fp.hasTransparency = true
+			fp.srcHasTransparency = true
 
 			if srcSam8[3] == 0 {
 				// No need to do anything if the pixel is fully transparent.
@@ -182,7 +182,7 @@ func convertSrcRow_RGBA(fp *FPObject, wc *convertSrcWorkContext, j int) {
 		srcSam8 = wc.src_AsRGBA.Pix[wc.src_AsRGBA.Stride*j+4*i : wc.src_AsRGBA.Stride*j+4*i+4]
 
 		if srcSam8[3] < 255 {
-			fp.hasTransparency = true
+			fp.srcHasTransparency = true
 
 			if srcSam8[3] == 0 {
 				// No need to do anything if the pixel is fully transparent.

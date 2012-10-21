@@ -99,7 +99,7 @@ func (fp *FPObject) postProcessRow(im *FPImage, j int) {
 		rp := j*im.Stride + i*4 // index of the Red sample in im.Pix
 		ap := rp + 3            // index of the alpha sample
 
-		if !fp.hasTransparency {
+		if !fp.mustProcessTransparency {
 			// This image is known to have no transparency. Set alpha to 1,
 			// and clamp the other samples to [0,1]
 			for k = 0; k < 3; k++ {
@@ -249,7 +249,7 @@ func convertDstRow_NRGBA(fp *FPObject, wc *convertDstWorkContext, j int) {
 		dstSam := wc.dstPix[j*wc.dstStride+i*4 : j*wc.dstStride+i*4+4]
 
 		// Set the alpha sample
-		if !fp.hasTransparency {
+		if !fp.mustProcessTransparency {
 			dstSam[3] = 255
 		} else {
 			dstSam[3] = uint8(srcSam[3]*255.0 + 0.5)
@@ -321,7 +321,7 @@ func convertDstRow_RGBA(fp *FPObject, wc *convertDstWorkContext, j int) {
 		dstSam := wc.dstRGBA.Pix[j*wc.dstRGBA.Stride+i*4 : j*wc.dstRGBA.Stride+i*4+4]
 
 		// Set the alpha sample
-		if !fp.hasTransparency {
+		if !fp.mustProcessTransparency {
 			dstSam[3] = 255
 		} else {
 			dstSam[3] = uint8(srcSam[3]*255.0 + 0.5)
@@ -348,7 +348,7 @@ func convertDstRow_RGBA(fp *FPObject, wc *convertDstWorkContext, j int) {
 }
 
 func (fp *FPObject) convertDst_RGBA(src *FPImage) *image.RGBA {
-	if !fp.hasTransparency {
+	if !fp.mustProcessTransparency {
 		// If the image has no transparency, use convertDst_NRGBA_internal,
 		// which is usually somewhat faster.
 		dst := image.NewRGBA(src.Bounds())
@@ -387,7 +387,7 @@ func convertDstRow_RGBA64orNRGBA64(fp *FPObject, wc *convertDstWorkContext, j in
 		srcSam := wc.src.Pix[j*wc.src.Stride+i*4 : j*wc.src.Stride+i*4+4]
 
 		// Set the alpha sample
-		if !fp.hasTransparency {
+		if !fp.mustProcessTransparency {
 			dstSam[3] = 65535
 		} else {
 			dstSam[3] = uint16(srcSam[3]*65535.0 + 0.5)

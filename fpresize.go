@@ -36,7 +36,8 @@ type FPObject struct {
 	// resized multiple times.
 	srcFPImage *FPImage
 
-	hasTransparency bool // Do we need to process an alpha channel?
+	srcHasTransparency      bool // Does the source image have transparency?
+	mustProcessTransparency bool // Do we need to process an alpha channel?
 
 	filterGetter FilterGetter
 	blurGetter   BlurGetter
@@ -300,7 +301,7 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 	// Iterate over the columns (of which src and dst have the same number)
 	// Columns of *samples*, that is, not pixels.
 	for col := 0; col < 4*w; col++ {
-		if fp.hasTransparency || (col%4 != 3) { // If no transparency, skip over the alpha samples
+		if fp.mustProcessTransparency || (col%4 != 3) { // If no transparency, skip over the alpha samples
 			wi.srcSam = src.Pix[col:]
 			wi.dstSam = dst.Pix[col:]
 			// Assign the work to whatever worker happens to be available to receive it.
@@ -355,7 +356,7 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	for row := 0; row < h; row++ {
 		// Iterate over R,G,B,A
 		for k := 0; k < 4; k++ {
-			if fp.hasTransparency || k != 3 {
+			if fp.mustProcessTransparency || k != 3 {
 				wi.srcSam = src.Pix[row*src.Stride+k:]
 				wi.dstSam = dst.Pix[row*dst.Stride+k:]
 				workQueue <- wi
@@ -438,7 +439,7 @@ func (fp *FPObject) ScaleFactor(isVertical bool) float64 {
 // callback functions, so that the filter to use could be selected based on
 // this information.
 func (fp *FPObject) HasTransparency() bool {
-	return fp.hasTransparency
+	return fp.mustProcessTransparency
 }
 
 // SRGBToLinear is the default input ColorConverter.
@@ -609,12 +610,6 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 	}
 
 	if fp.srcFPImage == nil {
-		// If we're using transparent virtual pixels, force processing of
-		// the alpha channel.
-		if fp.virtualPixels == VirtualPixelsTransparent {
-			fp.hasTransparency = true
-		}
-
 		fp.srcFPImage = new(FPImage)
 		err = fp.convertSrc(fp.srcImage, fp.srcFPImage)
 		if err != nil {
@@ -625,6 +620,8 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 		// it anymore.
 		fp.srcImage = nil
 	}
+
+	fp.mustProcessTransparency = (fp.srcHasTransparency || fp.virtualPixels == VirtualPixelsTransparent)
 
 	// When changing the width, the relevant samples are close together in memory.
 	// When changing the height, they are much farther apart. On a modern computer,

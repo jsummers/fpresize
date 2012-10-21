@@ -170,7 +170,7 @@ func runDrawTest(t *testing.T, opts *testOptions) {
 	var dst2 image.Image
 	var err error
 
-	src = readImageFromFile(t, opts.srcImgDir+"rgb8a.png")
+	src = readImageFromFile(t, opts.srcImgDir+opts.infn)
 	fp := New(src)
 	fp.SetTargetBounds(image.Rect(0, 0, 28, 28))
 	dst1, err = fp.Resize()
@@ -180,10 +180,20 @@ func runDrawTest(t *testing.T, opts *testOptions) {
 	}
 
 	fp.SetTargetBounds(image.Rect(0, 0, 20, 15))
+	if opts.trnsTest1 {
+		fp.SetVirtualPixels(VirtualPixelsTransparent)
+	}
 	dst2, err = fp.Resize()
 	if err != nil {
 		t.Logf("%s\n", err.Error())
 		t.FailNow()
+	}
+
+	if opts.trnsTest1 {
+		if !fp.HasTransparency() {
+			t.Logf("%s: HasTransparency()==false, should be true\n", opts.outfn)
+			t.Fail()
+		}
 	}
 
 	// Draw dst2 onto dst1
@@ -211,6 +221,7 @@ type testOptions struct {
 	disableInputGamma  bool
 	disableOutputGamma bool
 	convertToRGBA      bool
+	trnsTest1          bool
 }
 
 const (
@@ -402,6 +413,7 @@ func TestMain(t *testing.T) {
 	runFileTest(t, opts)
 
 	resetOpts(opts)
+	opts.infn = "rgb8a.png"
 	opts.outfn = "test16.png"
 	runDrawTest(t, opts)
 
@@ -416,4 +428,10 @@ func TestMain(t *testing.T) {
 	opts.adv_x2 = 21.0 + 2.2
 	opts.adv_y2 = 22.0 + 2.2
 	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.infn = "rgb8.png"
+	opts.outfn = "test18.png"
+	opts.trnsTest1 = true
+	runDrawTest(t, opts)
 }
