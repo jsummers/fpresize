@@ -48,6 +48,7 @@ type convertSrcWorkContext struct {
 	src_AsRGBA      *image.RGBA
 	src_AsNRGBA     *image.NRGBA
 	src_AsYCbCr     *image.YCbCr
+	src_AsGray      *image.Gray
 	cvtRowFn        func(fp *FPObject, cctx *convertSrcWorkContext, j int)
 }
 
@@ -119,6 +120,35 @@ func convertSrcRow_Any(fp *FPObject, wc *convertSrcWorkContext, j int) {
 				dstSam[k] *= dstSam[3]
 			}
 		}
+	}
+}
+
+// Convert row j from wc.src_AsGray to wc.dst.
+// This is an optimized version of convertSrcRow_Any().
+func convertSrcRow_Gray(fp *FPObject, wc *convertSrcWorkContext, j int) {
+	for i := 0; i < fp.srcW; i++ {
+		srcPix := wc.src_AsGray.Pix[wc.src_AsGray.Stride*j+i]
+
+		// Identify the slice of samples representing this pixel in the
+		// converted image.
+		dstSam := wc.dst.Pix[j*wc.dst.Stride+i*4 : j*wc.dst.Stride+i*4+4]
+
+		// Do color correction, if necessary.
+		if fp.inputCCF != nil && wc.inputLUT_8to32 != nil {
+			// Convert to linear color, using a lookup table.
+			dstSam[0] = wc.inputLUT_8to32[srcPix]
+		} else {
+			// In all other cases, first copy the uncorrected sample to dstSam.
+			dstSam[0] = float32(srcPix) / 255.0
+
+			if fp.inputCCF != nil {
+				// Convert to linear color, without a lookup table.
+				fp.inputCCF(dstSam[0:1])
+			}
+		}
+		dstSam[1] = dstSam[0]
+		dstSam[2] = dstSam[0]
+		dstSam[3] = 1.0
 	}
 }
 
@@ -314,6 +344,7 @@ func (fp *FPObject) convertSrc(src image.Image, dst *FPImage) error {
 	wc.src_AsRGBA, _ = wc.srcImage.(*image.RGBA)
 	wc.src_AsNRGBA, _ = wc.srcImage.(*image.NRGBA)
 	wc.src_AsYCbCr, _ = wc.srcImage.(*image.YCbCr)
+	wc.src_AsGray, _ = wc.srcImage.(*image.Gray)
 
 	// Select a conversion strategy.
 	if wc.src_AsNRGBA != nil {
@@ -324,6 +355,9 @@ func (fp *FPObject) convertSrc(src image.Image, dst *FPImage) error {
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else if wc.src_AsYCbCr != nil {
 		wc.cvtRowFn = convertSrcRow_YCbCr
+		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
+	} else if wc.src_AsGray != nil {
+		wc.cvtRowFn = convertSrcRow_Gray
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 	} else {
 		wc.cvtRowFn = convertSrcRow_Any
