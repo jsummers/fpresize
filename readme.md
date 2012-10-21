@@ -40,11 +40,9 @@ reason.
 Changes are likely to focus on performance. Although it is very fast
 in most cases, there is room for improvement.
 
-Fpresize always processes images as full-color RGBA. (It does avoid
-processing the alpha channel if the image has no transparency, though
-it still stores it.) Resizing a grayscale or alpha image is thus very
-inefficient, both in memory and speed. Optimized support for these
-image types may be added at some point.
+Fpresize always stores images as full-color RGBA. It has optimizations to
+avoid some of the unnecessary work if the image is fully opaque, or is
+grayscale, but it still uses the extra memory.
 
 Its use of multithreading could be improved, by using fewer goroutines
 in some cases, and/or larger work items. It's difficult to know what

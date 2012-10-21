@@ -83,9 +83,9 @@ func (fp *FPObject) makeOutputLUT_Xto32(tableSize int) []float32 {
 }
 
 // Take a row fresh from resizeWidth/resizeHeight
-//  * associated alpha, linear colorspace, alpha samples may not be valid
+//  * associated alpha, linear colorspace, some samples may not be valid
 // Convert to 
-//  * unassociated alpha, linear colorspace, alpha samples always valid,
+//  * unassociated alpha, linear colorspace, samples always valid,
 //    all samples clamped to [0,1].
 //
 // It is possible that we will convert to unassociated alpha needlessly, only
@@ -98,6 +98,18 @@ func (fp *FPObject) postProcessRow(im *FPImage, j int) {
 	for i := 0; i < (im.Rect.Max.X - im.Rect.Min.X); i++ {
 		rp := j*im.Stride + i*4 // index of the Red sample in im.Pix
 		ap := rp + 3            // index of the alpha sample
+
+		if !fp.mustProcessColor {
+			// If the green and blue samples aren't valid (for grayscale
+			// images, we may only process the red channel), make them valid.
+			//
+			// For performance reasons, it would be better to do this *after*
+			// colorspace conversion, instead of here. But that would make a
+			// mess of the code, and in most cases the speed improvement would
+			// be very small.
+			im.Pix[rp+1] = im.Pix[rp]
+			im.Pix[rp+2] = im.Pix[rp]
+		}
 
 		if !fp.mustProcessTransparency {
 			// This image is known to have no transparency. Set alpha to 1,

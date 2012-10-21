@@ -347,6 +347,7 @@ func (fp *FPObject) convertSrc(src image.Image, dst *FPImage) error {
 	wc.src_AsGray, _ = wc.srcImage.(*image.Gray)
 
 	// Select a conversion strategy.
+	fp.srcHasColor = true
 	if wc.src_AsNRGBA != nil {
 		wc.cvtRowFn = convertSrcRow_NRGBA
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
@@ -359,6 +360,7 @@ func (fp *FPObject) convertSrc(src image.Image, dst *FPImage) error {
 	} else if wc.src_AsGray != nil {
 		wc.cvtRowFn = convertSrcRow_Gray
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
+		fp.srcHasColor = false
 	} else {
 		wc.cvtRowFn = convertSrcRow_Any
 		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)

@@ -37,7 +37,9 @@ type FPObject struct {
 	srcFPImage *FPImage
 
 	srcHasTransparency      bool // Does the source image have transparency?
+	srcHasColor             bool // Is the source image NOT grayscale (or gray+alpha)?
 	mustProcessTransparency bool // Do we need to process an alpha channel?
+	mustProcessColor        bool // Might any of the color channels differ?
 
 	filterGetter FilterGetter
 	blurGetter   BlurGetter
@@ -630,11 +632,14 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 	}
 
 	fp.mustProcessTransparency = (fp.srcHasTransparency || fp.virtualPixels == VirtualPixelsTransparent)
+	fp.mustProcessColor = fp.srcHasColor
 
 	// Set the .channelInfo fields
 	for k := 0; k < 4; k++ {
-		if k == 3 && !fp.mustProcessTransparency {
-			fp.channelInfo[k].mustProcess = false
+		if k == 3 {
+			fp.channelInfo[k].mustProcess = fp.mustProcessTransparency
+		} else if k == 1 || k == 2 {
+			fp.channelInfo[k].mustProcess = fp.mustProcessColor
 		} else {
 			fp.channelInfo[k].mustProcess = true
 		}
