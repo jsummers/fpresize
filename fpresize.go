@@ -452,6 +452,17 @@ func (fp *FPObject) HasTransparency() bool {
 	return fp.mustProcessTransparency
 }
 
+// If HasColor returns false, the image is grayscale (with or without
+// transparency). A return value of true does not necessarily provide any
+// information -- the image could still be grayscale.
+//
+// This is only valid during or after Resize() -- it's meant to be used by
+// callback functions, so that the filter to use could be selected based on
+// this information.
+func (fp *FPObject) HasColor() bool {
+	return fp.mustProcessColor
+}
+
 // SRGBToLinear is the default input ColorConverter.
 func SRGBToLinear(s []float32) {
 	for k := range s {
