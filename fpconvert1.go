@@ -339,29 +339,28 @@ func (fp *FPObject) convertSrc(src image.Image, dst *FPImage) error {
 	wc.dst = dst
 	wc.srcImage = src
 
-	// Test if the underlying image type of fp.srcImage is one for which we
-	// have an optimized converter function.
-	wc.src_AsRGBA, _ = wc.srcImage.(*image.RGBA)
-	wc.src_AsNRGBA, _ = wc.srcImage.(*image.NRGBA)
-	wc.src_AsYCbCr, _ = wc.srcImage.(*image.YCbCr)
-	wc.src_AsGray, _ = wc.srcImage.(*image.Gray)
-
-	// Select a conversion strategy.
+	// Look at the underlying type of fp.srcImage, and prepare a conversion
+	// strategy.
 	fp.srcHasColor = true
-	if wc.src_AsNRGBA != nil {
+	switch wc.srcImage.(type) {
+	case *image.NRGBA:
+		wc.src_AsNRGBA = wc.srcImage.(*image.NRGBA)
 		wc.cvtRowFn = convertSrcRow_NRGBA
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
-	} else if wc.src_AsRGBA != nil {
+	case *image.RGBA:
+		wc.src_AsRGBA = wc.srcImage.(*image.RGBA)
 		wc.cvtRowFn = convertSrcRow_RGBA
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
-	} else if wc.src_AsYCbCr != nil {
+	case *image.YCbCr:
+		wc.src_AsYCbCr = wc.srcImage.(*image.YCbCr)
 		wc.cvtRowFn = convertSrcRow_YCbCr
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
-	} else if wc.src_AsGray != nil {
+	case *image.Gray:
+		wc.src_AsGray = wc.srcImage.(*image.Gray)
 		wc.cvtRowFn = convertSrcRow_Gray
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 		fp.srcHasColor = false
-	} else {
+	default:
 		wc.cvtRowFn = convertSrcRow_Any
 		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
 	}

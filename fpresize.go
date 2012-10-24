@@ -68,8 +68,8 @@ type channelInfoType struct {
 }
 
 const (
-	VirtualPixelsNone        = iota
-	VirtualPixelsTransparent = iota
+	VirtualPixelsNone = iota
+	VirtualPixelsTransparent
 )
 
 // A ColorConverter is passed a slice of samples. It converts them all to
@@ -100,17 +100,6 @@ type fpWeight struct {
 	srcSamIdx int
 	dstSamIdx int
 	weight    float32
-}
-
-// For convenience, we (usually) don't supply negative arguments to filters.
-func fixupFilterArg(filterFlags uint32, x float64) float64 {
-	if filterFlags&FilterFlagAsymmetric != 0 {
-		return x
-	}
-	if x < 0.0 {
-		return -x
-	}
-	return x
 }
 
 // Create and return a weightlist for the given dimension, using fp.filter.
@@ -195,7 +184,12 @@ func (fp *FPObject) createWeightList(isVertical bool) (weightList []fpWeight) {
 			// arg is the value passed to the filter function;
 			// v is the value returned by the filter function.
 			arg := (float64(srcSamIdx) - posInSrc) / reductionFactor
-			v := filter.F(fixupFilterArg(filterFlags, arg), scaleFactor)
+			// For convenience, (usually) don't supply negative arguments to filters.
+			if (arg < 0.0) && (filterFlags&FilterFlagAsymmetric == 0) {
+				arg = -arg
+			}
+
+			v := filter.F(arg, scaleFactor)
 			if v == 0.0 {
 				continue
 			}
@@ -285,7 +279,7 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 	wc := new(resampleWorkContext)
 	dst = new(FPImage)
 
-	w = src.Rect.Max.X - src.Rect.Min.X
+	w = src.Rect.Dx()
 
 	dst.Rect.Min.X = 0
 	dst.Rect.Min.Y = 0
@@ -341,7 +335,7 @@ func (fp *FPObject) resizeWidth(src *FPImage) (dst *FPImage) {
 	wc := new(resampleWorkContext)
 	dst = new(FPImage)
 
-	h = src.Rect.Max.Y - src.Rect.Min.Y
+	h = src.Rect.Dy()
 
 	dst.Rect.Min.X = 0
 	dst.Rect.Min.Y = 0
@@ -399,8 +393,8 @@ func New(srcImg image.Image) *FPObject {
 func (fp *FPObject) SetSourceImage(srcImg image.Image) {
 	fp.srcImage = srcImg
 	fp.srcBounds = srcImg.Bounds()
-	fp.srcW = fp.srcBounds.Max.X - fp.srcBounds.Min.X
-	fp.srcH = fp.srcBounds.Max.Y - fp.srcBounds.Min.Y
+	fp.srcW = fp.srcBounds.Dx()
+	fp.srcH = fp.srcBounds.Dy()
 }
 
 // SetFilterGetter specifies a function that will return the resampling filter
@@ -532,8 +526,8 @@ func (fp *FPObject) setTargetCanvasBounds(dstBounds image.Rectangle) {
 	if fp.dstBounds.Max.Y < fp.dstBounds.Min.Y+1 {
 		fp.dstBounds.Max.Y = fp.dstBounds.Min.Y + 1
 	}
-	fp.dstCanvasW = fp.dstBounds.Max.X - fp.dstBounds.Min.X
-	fp.dstCanvasH = fp.dstBounds.Max.Y - fp.dstBounds.Min.Y
+	fp.dstCanvasW = fp.dstBounds.Dx()
+	fp.dstCanvasH = fp.dstBounds.Dy()
 	fp.dstOffsetX = 0.0
 	fp.dstOffsetY = 0.0
 	fp.dstTrueW = float64(fp.dstCanvasW)
@@ -574,6 +568,7 @@ func (fp *FPObject) SetTargetBoundsAdvanced(dstBounds image.Rectangle,
 }
 
 // SetVirtualPixels controls how the edges of the image are handled.
+// n is VirtualPixelsNone or VirtualPixelsTransparent.
 // This can only be called after setting the target bounds.
 func (fp *FPObject) SetVirtualPixels(n int) {
 	fp.virtualPixels = n
