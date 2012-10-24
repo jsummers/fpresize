@@ -441,4 +441,11 @@ func TestMain(t *testing.T) {
 	opts.bounds.Max.X = 18
 	opts.bounds.Max.Y = 18
 	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test20.png"
+	opts.infn = "g16.png"
+	opts.bounds.Max.X = 18
+	opts.bounds.Max.Y = 18
+	runFileTest(t, opts)
 }

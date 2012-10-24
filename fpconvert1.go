@@ -360,6 +360,10 @@ func (fp *FPObject) convertSrc(src image.Image, dst *FPImage) error {
 		wc.cvtRowFn = convertSrcRow_Gray
 		wc.inputLUT_8to32 = fp.makeInputLUT_Xto32(256)
 		fp.srcHasColor = false
+	case *image.Gray16:
+		wc.cvtRowFn = convertSrcRow_Any
+		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
+		fp.srcHasColor = false
 	default:
 		wc.cvtRowFn = convertSrcRow_Any
 		wc.inputLUT_16to32 = fp.makeInputLUT_Xto32(65536)
