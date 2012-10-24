@@ -123,6 +123,29 @@ func makeNearestNeighborFilter() *fpresize.Filter {
 	return f
 }
 
+// Another custom filter example.
+// Return a constant-valued box filter.
+// Ties are broken arbitrarily -- pixels are not duplicated, split, or skipped.
+// This is often identical to the "boxavg" filter, but it can be quite
+// different sometimes, such as when reducing an image to exactly 2/3 its
+// original size.
+func makeBoxFilter() *fpresize.Filter {
+	f := new(fpresize.Filter)
+	f.F = func(x float64, scaleFactor float64) float64 {
+		if x >= -0.4999999 && x <= 0.5000001 {
+			return 1.0
+		}
+		return 0.0
+	}
+	f.Radius = func(scaleFactor float64) float64 {
+		return 0.5001
+	}
+	f.Flags = func(scaleFactor float64) uint32 {
+		return fpresize.FilterFlagAsymmetric
+	}
+	return f
+}
+
 func resizeMain(options *options_type) error {
 	var err error
 	var srcBounds image.Rectangle
@@ -186,6 +209,8 @@ func resizeMain(options *options_type) error {
 		fp.SetFilter(fpresize.MakeGaussianFilter())
 	case "triangle":
 		fp.SetFilter(fpresize.MakeTriangleFilter())
+	case "box":
+		fp.SetFilter(makeBoxFilter())
 	case "boxavg":
 		fp.SetFilter(fpresize.MakeBoxAvgFilter())
 	case "nearest":
@@ -282,7 +307,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  fpr (-w|-h) <n> [options] <source-file> <target-file>\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "  Available filters: lanczos, lanczos2, catrom, mitchell, hermite, bspline,\n")
-		fmt.Fprintf(os.Stderr, "    gaussian, mix, boxavg, nearest, triangle\n")
+		fmt.Fprintf(os.Stderr, "    gaussian, mix, box, boxavg, nearest, triangle\n")
 	}
 
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
