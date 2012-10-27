@@ -696,7 +696,7 @@ func (fp *FPObject) ResizeToNRGBA() (*image.NRGBA, error) {
 		return nil, err
 	}
 
-	nrgba := fp.convertFPToNRGBA(dstFPImage)
+	nrgba := fp.convertDst_NRGBA(dstFPImage)
 	return nrgba, nil
 }
 
@@ -743,4 +743,39 @@ func (fp *FPObject) ResizeToRGBA64() (*image.RGBA64, error) {
 
 	rgba64 := fp.convertDst_RGBA64(dstFPImage)
 	return rgba64, nil
+}
+
+const (
+	// Indicates that you prefer grayscale images to be returned in image.Gray
+	// or image.Gray16 format.
+	ResizeFlagGrayOK = 0x00000001
+	// Indicates that you prefer NRGBA(64) format to RGBA(64) format.
+	ResizeFlagUnassocAlpha = 0x00000002
+)
+
+// ResizeToImage resize the image and returns an image.Image interface whose
+// underlying type may vary depending on the source image type, and other
+// things. The logic to use is determined by the 'flags' parameter.
+//
+// 'flags' is a bitwise combination of ResizeFlag* constants.
+func (fp *FPObject) ResizeToImage(flags uint32) (image.Image, error) {
+	var err error
+
+	dstFPImage, err := fp.resizeMain()
+	if err != nil {
+		return nil, err
+	}
+
+	if !fp.mustProcessColor && !fp.mustProcessTransparency && (flags&ResizeFlagGrayOK) != 0 {
+		gray := fp.convertDst_Gray(dstFPImage)
+		return gray, nil
+	}
+
+	if (flags & ResizeFlagUnassocAlpha) != 0 {
+		nrgba := fp.convertDst_NRGBA(dstFPImage)
+		return nrgba, nil
+	}
+
+	rgba := fp.convertDst_RGBA(dstFPImage)
+	return rgba, nil
 }

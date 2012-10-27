@@ -167,6 +167,7 @@ type convertDstWorkContext struct {
 	dstRGBA    *image.RGBA
 	dstRGBA64  *image.RGBA64
 	dstNRGBA64 *image.NRGBA64
+	dstGray    *image.Gray
 	isNRGBA64  bool
 
 	outputLUT_Xto8_Size  int
@@ -317,7 +318,7 @@ func (fp *FPObject) convertDst_NRGBA_internal(src *FPImage, dstPix []uint8, dstS
 	fp.convertDstIndirect(wc)
 }
 
-func (fp *FPObject) convertFPToNRGBA(src *FPImage) (dst *image.NRGBA) {
+func (fp *FPObject) convertDst_NRGBA(src *FPImage) (dst *image.NRGBA) {
 	dst = image.NewNRGBA(src.Bounds())
 	fp.convertDst_NRGBA_internal(src, dst.Pix, dst.Stride, "NRGBA")
 	return
@@ -464,4 +465,55 @@ func (fp *FPObject) convertDst_RGBA64(src *FPImage) *image.RGBA64 {
 	wc.cvtRowFn = convertDstRow_RGBA64orNRGBA64
 	fp.convertDstIndirect(wc)
 	return wc.dstRGBA64
+}
+
+func convertDstRow_Gray(fp *FPObject, wc *convertDstWorkContext, j int) {
+	var tmpPix [3]float32
+
+	fp.postProcessRow(wc.src, j)
+
+	for i := 0; i < (wc.src.Rect.Max.X - wc.src.Rect.Min.X); i++ {
+		srcVal := wc.src.Pix[j*wc.src.Stride+i*4]
+		dstSamPos := j*wc.dstGray.Stride + i // Index into wc.dstGray.Pix
+
+		// Do colorspace conversion if needed.
+		if fp.outputCCF != nil {
+			if wc.outputLUT_Xto8 != nil {
+				// Do colorspace conversion using a lookup table.
+				wc.dstGray.Pix[dstSamPos] = wc.outputLUT_Xto8[int(srcVal*float32(wc.outputLUT_Xto8_Size-1)+0.5)]
+				continue
+			} else {
+				// Do colorspace conversion the slow way.
+				tmpPix[0] = srcVal
+				if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
+					tmpPix[1] = srcVal
+					tmpPix[2] = srcVal
+					fp.outputCCF(tmpPix[0:3])
+				} else {
+					fp.outputCCF(tmpPix[0:1])
+				}
+				srcVal = tmpPix[0]
+			}
+		}
+		wc.dstGray.Pix[dstSamPos] = uint8(srcVal*255.0 + 0.5)
+	}
+}
+
+func (fp *FPObject) convertDst_Gray(src *FPImage) *image.Gray {
+	wc := new(convertDstWorkContext)
+	wc.src = src
+	wc.dstGray = image.NewGray(src.Bounds())
+
+	wc.outputLUT_Xto8_Size = 9885
+	wc.outputLUT_Xto8 = fp.makeOutputLUT_Xto8(wc.outputLUT_Xto8_Size)
+
+	if fp.outputCCF == nil {
+		fp.progressMsgf("Converting to Gray format")
+	} else {
+		fp.progressMsgf("Converting to target colorspace, and Gray format")
+	}
+
+	wc.cvtRowFn = convertDstRow_Gray
+	fp.convertDstIndirect(wc)
+	return wc.dstGray
 }

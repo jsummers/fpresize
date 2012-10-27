@@ -149,8 +149,7 @@ func makeBoxFilter() *fpresize.Filter {
 func resizeMain(options *options_type) error {
 	var err error
 	var srcBounds image.Rectangle
-	var rgbaResizedImage *image.RGBA
-	var nrgbaResizedImage *image.NRGBA
+	var resizedImage image.Image
 	var srcImg image.Image
 	var srcW, srcH, dstW, dstH int
 	var outputFileFormat int
@@ -256,9 +255,16 @@ func resizeMain(options *options_type) error {
 
 	// Do the resize.
 	if outputFileFormat == ffPNG {
-		nrgbaResizedImage, err = fp.ResizeToNRGBA()
+		resizedImage, err = fp.ResizeToImage(fpresize.ResizeFlagGrayOK | fpresize.ResizeFlagUnassocAlpha)
+	} else if outputFileFormat == ffJPEG {
+		// As of Go 1.0.3, the jpeg package does not support writing grayscale
+		// images. Passing an image.Gray to it will only slow it down.
+		// If and when the jpeg package supports grayscale, we should change
+		// this to:
+		//  resizedImage, err = fp.ResizeToImage(fpresize.ResizeFlagGrayOK)
+		resizedImage, err = fp.ResizeToRGBA()
 	} else {
-		rgbaResizedImage, err = fp.ResizeToRGBA()
+		resizedImage, err = fp.ResizeToRGBA()
 	}
 	if err != nil {
 		return err
@@ -267,11 +273,7 @@ func resizeMain(options *options_type) error {
 	processingStopTime = time.Now()
 
 	progressMsg(options, "Writing target file")
-	if nrgbaResizedImage != nil {
-		err = writeImageToFile(nrgbaResizedImage, options.dstFilename, outputFileFormat)
-	} else {
-		err = writeImageToFile(rgbaResizedImage, options.dstFilename, outputFileFormat)
-	}
+	err = writeImageToFile(resizedImage, options.dstFilename, outputFileFormat)
 	if err != nil {
 		return err
 	}

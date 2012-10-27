@@ -37,7 +37,8 @@ SetFilter(), or disable color correction by calling
 SetInputColorConverter(nil); SetOutputColorConverter(nil).
 
 Now resize the image, by calling one of the available Resize* methods:
-ResizeToRGBA, ResizeToNRGBA, ResizeToRGBA64, ResizeToNRGBA64, or Resize.
+ResizeToRGBA, ResizeToNRGBA, ResizeToRGBA64, ResizeToNRGBA64, ResizeToImage,
+or Resize.
 
     resizedImage, err := fp.ResizeToRGBA()
 

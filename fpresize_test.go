@@ -146,6 +146,8 @@ func runFileTest(t *testing.T, opts *testOptions) {
 		dst, err = fp.ResizeToRGBA64()
 	case outFmtNRGBA64:
 		dst, err = fp.ResizeToNRGBA64()
+	case outFmtSpecial1:
+		dst, err = fp.ResizeToImage(ResizeFlagGrayOK | ResizeFlagUnassocAlpha)
 	default:
 		dst, err = fp.ResizeToNRGBA()
 	}
@@ -225,11 +227,12 @@ type testOptions struct {
 }
 
 const (
-	outFmtFP      = iota
-	outFmtRGBA    = iota
-	outFmtNRGBA   = iota
-	outFmtRGBA64  = iota
-	outFmtNRGBA64 = iota
+	outFmtFP       = iota
+	outFmtRGBA     = iota
+	outFmtNRGBA    = iota
+	outFmtRGBA64   = iota
+	outFmtNRGBA64  = iota
+	outFmtSpecial1 = iota
 )
 
 const (
@@ -447,5 +450,13 @@ func TestMain(t *testing.T) {
 	opts.infn = "g16.png"
 	opts.bounds.Max.X = 18
 	opts.bounds.Max.Y = 18
+	runFileTest(t, opts)
+
+	resetOpts(opts)
+	opts.outfn = "test21.png"
+	opts.infn = "g8.png"
+	opts.bounds.Max.X = 18
+	opts.bounds.Max.Y = 18
+	opts.outFmt = outFmtSpecial1
 	runFileTest(t, opts)
 }
