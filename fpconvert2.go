@@ -471,10 +471,16 @@ func (fp *FPObject) convertDst_RGBA64(src *FPImage) *image.RGBA64 {
 func convertDstRow_Gray(fp *FPObject, wc *convertDstWorkContext, j int) {
 	var tmpPix [3]float32
 
-	fp.postProcessRow(wc.src, j)
-
 	for i := 0; i < (wc.src.Rect.Max.X - wc.src.Rect.Min.X); i++ {
 		srcVal := wc.src.Pix[j*wc.src.Stride+i*4]
+		// Since we didn't call postProcessRow(), do the little bit of
+		// post-processing needed for grayscale images.
+		if srcVal < 0.0 {
+			srcVal = 0.0
+		} else if srcVal > 1.0 {
+			srcVal = 1.0
+		}
+
 		dstSamPos := j*wc.dstGray.Stride + i // Index into wc.dstGray.Pix
 
 		// Do colorspace conversion if needed.
