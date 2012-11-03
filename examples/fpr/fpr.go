@@ -153,6 +153,7 @@ func resizeMain(options *options_type) error {
 	var srcImg image.Image
 	var srcW, srcH, dstW, dstH int
 	var outputFileFormat int
+	var otherFlags uint32
 
 	startTime := time.Now()
 
@@ -253,9 +254,13 @@ func resizeMain(options *options_type) error {
 	}
 	fp.SetTargetBounds(image.Rect(0, 0, dstW, dstH))
 
+	if options.depth > 8 {
+		otherFlags |= fpresize.ResizeFlag16Bit
+	}
+
 	// Do the resize.
 	if outputFileFormat == ffPNG {
-		resizedImage, err = fp.ResizeToImage(fpresize.ResizeFlagGrayOK | fpresize.ResizeFlagUnassocAlpha)
+		resizedImage, err = fp.ResizeToImage(otherFlags | fpresize.ResizeFlagGrayOK | fpresize.ResizeFlagUnassocAlpha)
 	} else if outputFileFormat == ffJPEG {
 		// As of Go 1.0.3, the jpeg package does not support writing grayscale
 		// images. Passing an image.Gray to it will only slow it down.
@@ -290,6 +295,7 @@ func resizeMain(options *options_type) error {
 type options_type struct {
 	width       int
 	height      int
+	depth       int
 	srcFilename string
 	dstFilename string
 	filterName  string
@@ -314,6 +320,7 @@ func main() {
 
 	flag.IntVar(&options.height, "h", 0, "Target image height, in pixels")
 	flag.IntVar(&options.width, "w", 0, "Target image width, in pixels")
+	flag.IntVar(&options.depth, "depth", 8, "Preferred bit depth, in bits per sample")
 	flag.StringVar(&options.filterName, "filter", "auto", "Resampling filter to use")
 	flag.Float64Var(&options.blur, "blur", 1.0, "Amount to blur")
 	flag.BoolVar(&options.noGamma, "nogamma", false, "Disable color correction")

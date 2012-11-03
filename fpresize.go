@@ -751,6 +751,8 @@ const (
 	ResizeFlagGrayOK = 0x00000001
 	// Indicates that you prefer NRGBA(64) format to RGBA(64) format.
 	ResizeFlagUnassocAlpha = 0x00000002
+	// Indicates that you prefer 16-bit images ([N]RGBA64/Gray16 to [N]RGBA/Gray).
+	ResizeFlag16Bit = 0x00000004
 )
 
 // ResizeToImage resize the image and returns an image.Image interface whose
@@ -766,14 +768,25 @@ func (fp *FPObject) ResizeToImage(flags uint32) (image.Image, error) {
 		return nil, err
 	}
 
-	if !fp.mustProcessColor && !fp.mustProcessTransparency && (flags&ResizeFlagGrayOK) != 0 {
+	if !fp.mustProcessColor && !fp.mustProcessTransparency && (flags&ResizeFlagGrayOK) != 0 &&
+		(flags&ResizeFlag16Bit == 0) {
 		gray := fp.convertDst_Gray(dstFPImage)
 		return gray, nil
 	}
 
 	if (flags & ResizeFlagUnassocAlpha) != 0 {
-		nrgba := fp.convertDst_NRGBA(dstFPImage)
-		return nrgba, nil
+		if flags&ResizeFlag16Bit != 0 {
+			nrgba64 := fp.convertDst_NRGBA64(dstFPImage)
+			return nrgba64, nil
+		} else {
+			nrgba := fp.convertDst_NRGBA(dstFPImage)
+			return nrgba, nil
+		}
+	}
+
+	if flags&ResizeFlag16Bit != 0 {
+		rgba64 := fp.convertDst_RGBA64(dstFPImage)
+		return rgba64, nil
 	}
 
 	rgba := fp.convertDst_RGBA(dstFPImage)
