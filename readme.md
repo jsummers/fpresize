@@ -37,12 +37,13 @@ New features may be added in the future, but none are specifically
 planned. I will try not to break API backward-compatibility without good
 reason.
 
-Changes are likely to focus on performance. Although it is very fast
-in most cases, there is room for improvement.
-
 Fpresize always stores images as full-color RGBA. It has optimizations to
 avoid some of the unnecessary work if the image is fully opaque, or is
 grayscale, but it still uses the extra memory.
+
+Fpresize is generally very fast when processing images with a depth of 8 bits
+per sample. It can be much slower when the bit depth is higher, in part
+because less effort has been put into optimizing the code for such images.
 
 Its use of multithreading could be improved, by using fewer goroutines
 in some cases, and/or larger work items. It's difficult to know what

@@ -590,11 +590,10 @@ func (fp *FPObject) progressMsgf(format string, a ...interface{}) {
 // SetMaxWorkerThreads tells fpresize the maximum number of goroutines that it
 // should use simultaneously to do image processing. 0 means default.
 //
-// There should be no reason to call this method, unless you want to slow down
-// fpresize to conserve resources for other routines.
-//
-// It will probably do no good to set this higher than your runtime.GOMAXPROCS
-// setting, or higher than the number of available CPU cores.
+// In theory, there should be no reason to call this method, unless you want
+// to slow down fpresize to conserve resources for other processes.
+// In reality, though, there are situations in which reducing the number of
+// goroutines will improve performance.
 func (fp *FPObject) SetMaxWorkerThreads(n int) {
 	fp.maxWorkers = n
 }
@@ -673,8 +672,8 @@ func (fp *FPObject) resizeMain() (*FPImage, error) {
 // uses the custom FPImage type. The returned image is high-precision,
 // and satisfies the image.Image and image/draw.Image interfaces.
 //
-// This method may be slow. You should almost always use ResizeToNRGBA,
-// ResizeToRGBA, ResizeToNRGBA64, or ResizeToRGBA64 instead.
+// This method may be slow. You should almost always use ResizeToImage,
+// ResizeToNRGBA, ResizeToRGBA, ResizeToNRGBA64, or ResizeToRGBA64 instead.
 func (fp *FPObject) Resize() (*FPImage, error) {
 	dstFPImage, err := fp.resizeMain()
 	if err != nil {
