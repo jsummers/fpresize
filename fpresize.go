@@ -768,8 +768,11 @@ func (fp *FPObject) ResizeToImage(flags uint32) (image.Image, error) {
 		return nil, err
 	}
 
-	if !fp.mustProcessColor && !fp.mustProcessTransparency && (flags&ResizeFlagGrayOK) != 0 &&
-		(flags&ResizeFlag16Bit == 0) {
+	if !fp.mustProcessColor && !fp.mustProcessTransparency && flags&ResizeFlagGrayOK != 0 {
+		if flags&ResizeFlag16Bit != 0 {
+			gray16 := fp.convertDst_Gray16(dstFPImage)
+			return gray16, nil
+		}
 		gray := fp.convertDst_Gray(dstFPImage)
 		return gray, nil
 	}
@@ -778,17 +781,15 @@ func (fp *FPObject) ResizeToImage(flags uint32) (image.Image, error) {
 		if flags&ResizeFlag16Bit != 0 {
 			nrgba64 := fp.convertDst_NRGBA64(dstFPImage)
 			return nrgba64, nil
-		} else {
-			nrgba := fp.convertDst_NRGBA(dstFPImage)
-			return nrgba, nil
 		}
+		nrgba := fp.convertDst_NRGBA(dstFPImage)
+		return nrgba, nil
 	}
 
 	if flags&ResizeFlag16Bit != 0 {
 		rgba64 := fp.convertDst_RGBA64(dstFPImage)
 		return rgba64, nil
 	}
-
 	rgba := fp.convertDst_RGBA(dstFPImage)
 	return rgba, nil
 }

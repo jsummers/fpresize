@@ -168,6 +168,7 @@ type convertDstWorkContext struct {
 	dstRGBA64  *image.RGBA64
 	dstNRGBA64 *image.NRGBA64
 	dstGray    *image.Gray
+	dstGray16  *image.Gray16
 	isNRGBA64  bool
 
 	outputLUT_Xto8_Size  int
@@ -516,4 +517,47 @@ func (fp *FPObject) convertDst_Gray(src *FPImage) *image.Gray {
 	wc.cvtRowFn = convertDstRow_Gray
 	fp.convertDstIndirect(wc)
 	return wc.dstGray
+}
+
+func convertDstRow_Gray16(fp *FPObject, wc *convertDstWorkContext, j int) {
+	var tmpPix [3]float32
+
+	fp.postProcessRow(wc.src, j)
+
+	for i := 0; i < (wc.src.Rect.Max.X - wc.src.Rect.Min.X); i++ {
+		srcVal := wc.src.Pix[j*wc.src.Stride+i*4]
+
+		// Do colorspace conversion if needed.
+		if fp.outputCCF != nil {
+			tmpPix[0] = srcVal
+			if (fp.outputCCFFlags & CCFFlagWholePixels) != 0 {
+				tmpPix[1] = srcVal
+				tmpPix[2] = srcVal
+				fp.outputCCF(tmpPix[0:3])
+			} else {
+				fp.outputCCF(tmpPix[0:1])
+			}
+			srcVal = tmpPix[0]
+		}
+
+		dstVal16 := uint16(srcVal*65535.0 + 0.5)
+		wc.dstGray16.Pix[j*wc.dstGray16.Stride+i*2] = uint8(dstVal16 >> 8)
+		wc.dstGray16.Pix[j*wc.dstGray16.Stride+i*2+1] = uint8(dstVal16 & 0xff)
+	}
+}
+
+func (fp *FPObject) convertDst_Gray16(src *FPImage) *image.Gray16 {
+	wc := new(convertDstWorkContext)
+	wc.src = src
+	wc.dstGray16 = image.NewGray16(src.Bounds())
+
+	if fp.outputCCF == nil {
+		fp.progressMsgf("Converting to Gray16 format")
+	} else {
+		fp.progressMsgf("Converting to target colorspace, and Gray16 format")
+	}
+
+	wc.cvtRowFn = convertDstRow_Gray16
+	fp.convertDstIndirect(wc)
+	return wc.dstGray16
 }
