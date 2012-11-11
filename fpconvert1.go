@@ -1,7 +1,8 @@
 // ◄◄◄ fpconvert1.go ►►►
 // Copyright © 2012 Jason Summers
 
-// Functions converting to our FPImage format.
+// Functions for converting from a standard image.Image object, to our
+// internal format, prior to doing the resize.
 
 // Most of this code is related to improving speed. It could be much smaller and
 // simpler if we didn't care how slow it ran.

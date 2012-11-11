@@ -1,7 +1,7 @@
 // ◄◄◄ fpconvert2.go ►►►
 // Copyright © 2012 Jason Summers
 
-// Functions converting from our FPImage format.
+// Functions for converting the resized image to the final format.
 
 // Most of this code is related to improving speed. It could be much smaller and
 // simpler if we didn't care how slow it ran.
@@ -11,7 +11,7 @@ package fpresize
 import "image"
 
 // Make a lookup table that takes an int from 0 to tablesize-1,
-// and gives a uint8 (representing a sample from 0 to 255).
+// and returns a uint8 representing a sample from 0 to 255.
 func (fp *FPObject) makeOutputLUT_Xto8(tableSize int) []uint8 {
 	var i int
 
@@ -55,7 +55,7 @@ func (fp *FPObject) makeOutputLUT_Xto8(tableSize int) []uint8 {
 }
 
 // Make a lookup table that takes an int from 0 to tablesize-1,
-// and gives a float32 (representing a sample from 0.0 to 1.0).
+// and returns a float32 representing a sample from 0.0 to 1.0.
 func (fp *FPObject) makeOutputLUT_Xto32(tableSize int) []float32 {
 	var i int
 
@@ -131,11 +131,6 @@ func (fp *FPObject) postProcessRow(im *FPImage, j int) {
 			continue
 		}
 
-		// With some filters, it is possible to end up with an alpha value larger
-		// than 1. If that happens, it makes a difference whether we clamp the
-		// samples to valid values before, or after converting to unassociated alpha.
-		// I don't know which is better. The current code converts first, then clamps.
-
 		// Convert to unassociated alpha
 		if im.Pix[ap] != 1.0 {
 			for k = 0; k < 3; k++ {
@@ -154,7 +149,7 @@ func (fp *FPObject) postProcessRow(im *FPImage, j int) {
 	}
 }
 
-// Miscellaneous contextual data that is used internaly by the varioius
+// Miscellaneous contextual data that is used internally by the various
 // conversion functions.
 type convertDstWorkContext struct {
 	src *FPImage

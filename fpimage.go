@@ -92,14 +92,14 @@ func (m *fpModel) Convert(c color.Color) color.Color {
 }
 
 // (Method required by the image.Image interface)
-func (fp *FPImage) ColorModel() color.Model {
+func (fpi *FPImage) ColorModel() color.Model {
 	var fpm fpModel
 	return &fpm
 }
 
 // (Method required by the image.Image interface)
-func (fp *FPImage) Bounds() (r image.Rectangle) {
-	return fp.Rect
+func (fpi *FPImage) Bounds() (r image.Rectangle) {
+	return fpi.Rect
 }
 
 // (Method required by the image.Image interface)

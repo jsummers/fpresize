@@ -236,7 +236,7 @@ type resampleWorkContext struct {
 }
 
 type resampleWorkItem struct {
-	// src* and dst* are references to a set of samples within (presumably) a FPImage object.
+	// src* and dst* are references to a set of samples within (presumably) an FPImage object.
 	// Sam[wc.Stride*0] is the first sample; Sam[wc.Stride*1] is the next, ...
 	srcSam  []float32
 	dstSam  []float32
@@ -302,7 +302,7 @@ func (fp *FPObject) resizeHeight(src *FPImage) (dst *FPImage) {
 		go resampleWorker(wc, workQueue)
 	}
 
-	// Iterate over the columns (of which src and dst have the same number)
+	// Iterate over the columns (of which src and dst have the same number).
 	// Columns of *samples*, that is, not pixels.
 	for col := 0; col < 4*w; col++ {
 		if fp.channelInfo[col%4].mustProcess {
@@ -600,7 +600,7 @@ func (fp *FPObject) SetMaxWorkerThreads(n int) {
 
 func (fp *FPObject) resizeMain() (*FPImage, error) {
 	var err error
-	var intermedFPImage *FPImage // The image after resizing vertically
+	var intermedFPImage *FPImage
 	var dstFPImage *FPImage
 
 	fp.numWorkers = runtime.GOMAXPROCS(0)
