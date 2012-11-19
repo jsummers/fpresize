@@ -158,8 +158,15 @@ func runFileTest(t *testing.T, opts *testOptions) {
 
 	dstBounds = dst.Bounds()
 	if dstBounds != opts.bounds {
-		t.Logf("%s: incorrect bounds %v, expected %v", opts.outfn, dstBounds, opts.bounds)
+		t.Logf("%s: incorrect bounds %v, expected %v\n", opts.outfn, dstBounds, opts.bounds)
 		t.Fail()
+	}
+
+	if opts.testAt {
+		xr, xg, xb, xa := dst.At(-5, -5).RGBA()
+		if xr != 0 || xg != 0 || xb != 0 || xa != 0 {
+			t.Logf("%s: out of bounds At() returned nonzero\n")
+		}
 	}
 
 	writeImageToFile(t, dst, opts.actualDir+opts.outfn)
@@ -224,6 +231,7 @@ type testOptions struct {
 	disableOutputGamma bool
 	convertToRGBA      bool
 	trnsTest1          bool
+	testAt             bool
 }
 
 const (
@@ -254,6 +262,7 @@ func resetOpts(opts *testOptions) {
 	opts.disableInputGamma = false
 	opts.disableOutputGamma = false
 	opts.convertToRGBA = false
+	opts.testAt = false
 }
 
 func TestMain(t *testing.T) {
@@ -310,6 +319,7 @@ func TestMain(t *testing.T) {
 	opts.bounds.Max.Y = 18
 	opts.filter = MakeCubicFilter(1.0/3.0, 1.0/3.0)
 	opts.outFmt = outFmtFP
+	opts.testAt = true
 	runFileTest(t, opts)
 
 	resetOpts(opts)

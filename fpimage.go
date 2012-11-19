@@ -105,6 +105,11 @@ func (fpi *FPImage) Bounds() (r image.Rectangle) {
 // (Method required by the image.Image interface)
 func (fpi *FPImage) At(x, y int) color.Color {
 	var fpc FPColor
+
+	if !(image.Point{x, y}.In(fpi.Rect)) {
+		return fpc
+	}
+
 	x -= fpi.Rect.Min.X
 	y -= fpi.Rect.Min.Y
 	fpc.R = fpi.Pix[y*fpi.Stride+x*4+0]
