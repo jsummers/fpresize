@@ -8,7 +8,6 @@ package fpresize
 
 import "image"
 import "math"
-import "fmt"
 import "errors"
 import "runtime"
 
@@ -53,7 +52,7 @@ type FPObject struct {
 
 	virtualPixels int // A virtPix* constant
 
-	progressCallback func(msg string)
+	progressCallback func(format string, a ...interface{})
 
 	numWorkers int // Number of worker goroutines we will use
 	maxWorkers int // Max number requested by caller. 0 = not set.
@@ -575,7 +574,7 @@ func (fp *FPObject) SetVirtualPixels(n int) {
 }
 
 // (This is a debugging method. Please don't use.)
-func (fp *FPObject) SetProgressCallback(fn func(msg string)) {
+func (fp *FPObject) SetProgressCallback(fn func(format string, a ...interface{})) {
 	fp.progressCallback = fn
 }
 
@@ -583,8 +582,7 @@ func (fp *FPObject) progressMsgf(format string, a ...interface{}) {
 	if fp.progressCallback == nil {
 		return
 	}
-	msg := fmt.Sprintf(format, a...)
-	fp.progressCallback(msg)
+	fp.progressCallback(format, a...)
 }
 
 // SetMaxWorkerThreads tells fpresize the maximum number of goroutines that it

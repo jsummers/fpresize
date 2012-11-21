@@ -57,10 +57,11 @@ var processingStartTime time.Time
 var processingStopTime time.Time
 var lastMsgTime time.Time
 
-func progressMsg(options *options_type, msg string) {
+func progressMsgf(options *options_type, format string, a ...interface{}) {
 	if !options.verbose && !options.debug {
 		return
 	}
+	msg := fmt.Sprintf(format, a...)
 	now := time.Now()
 	if options.debug {
 		if !lastMsgTime.IsZero() {
@@ -165,7 +166,7 @@ func resizeMain(options *options_type) error {
 		return errors.New("Can't determine output file format. Please name the output file to end in .png or .jpg")
 	}
 
-	progressMsg(options, "Reading source file")
+	progressMsgf(options, "Reading source file")
 	srcImg, err = readImageFromFile(options.srcFilename)
 	if err != nil {
 		return err
@@ -177,7 +178,9 @@ func resizeMain(options *options_type) error {
 
 	fp := fpresize.New(srcImg)
 
-	fp.SetProgressCallback(func(msg string) { progressMsg(options, msg) })
+	fp.SetProgressCallback(func(format string, a ...interface{}) {
+		progressMsgf(options, format, a...)
+	})
 
 	if options.numThreads > 0 {
 		fp.SetMaxWorkerThreads(options.numThreads)
@@ -277,13 +280,13 @@ func resizeMain(options *options_type) error {
 
 	processingStopTime = time.Now()
 
-	progressMsg(options, "Writing target file")
+	progressMsgf(options, "Writing target file")
 	err = writeImageToFile(resizedImage, options.dstFilename, outputFileFormat)
 	if err != nil {
 		return err
 	}
 
-	progressMsg(options, "Done")
+	progressMsgf(options, "Done")
 	if options.debug {
 		fmt.Printf("Processing time: %v\n", processingStopTime.Sub(processingStartTime))
 		fmt.Printf("Total time: %v\n", time.Now().Sub(startTime))
