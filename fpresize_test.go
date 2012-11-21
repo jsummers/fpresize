@@ -165,7 +165,7 @@ func runFileTest(t *testing.T, opts *testOptions) {
 	if opts.testAt {
 		xr, xg, xb, xa := dst.At(-5, -5).RGBA()
 		if xr != 0 || xg != 0 || xb != 0 || xa != 0 {
-			t.Logf("%s: out of bounds At() returned nonzero\n")
+			t.Logf("%s: out of bounds At() returned nonzero\n", opts.outfn)
 		}
 	}
 
