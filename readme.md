@@ -23,7 +23,7 @@ Documentation
 -------------
 
 The documentation may be read online at
-[GoPkgDoc](http://go.pkgdoc.org/github.com/jsummers/fpresize).
+[GoDoc](http://godoc.org/github.com/jsummers/fpresize).
 
 Or, after installing, type:
 
