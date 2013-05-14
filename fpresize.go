@@ -480,7 +480,7 @@ func LinearTosRGB(s []float32) {
 
 // Supply a ColorConverter function to use when converting the original colors
 // to the colors in which the resizing will be performed.
-// 
+//
 // This must be called before calling the first Resize method, and may not be
 // changed afterward.
 // The default value is SRGBToLinear.
@@ -492,7 +492,7 @@ func (fp *FPObject) SetInputColorConverter(ccf ColorConverter) {
 
 // Supply a ColorConverter function to use when converting from the colors in
 // which the resizing was performed, to the final colors.
-// 
+//
 // This may be called at any time, and remains in effect for future Resize
 // method calls until it is called again.
 // The default value is LinearTosRGB.
@@ -536,7 +536,7 @@ func (fp *FPObject) setTargetCanvasBounds(dstBounds image.Rectangle) {
 // SetTargetBounds sets the size and origin of the resized image.
 // The source image will be mapped onto the given bounds.
 // It also sets the VirtualPixels setting to None.
-// 
+//
 // If the height or width is less than 1, the bounds will be adjusted
 // so that it is 1.
 func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
@@ -547,7 +547,7 @@ func (fp *FPObject) SetTargetBounds(dstBounds image.Rectangle) {
 // SetTargetBoundsAdvanced sets the bounds of the target image, and
 // the mapping of the source image onto it.
 // It also sets the VirtualPixels setting to Transparent.
-// 
+//
 // dstBounds is the bounds of the target image.
 //
 // x1, y1: The point (in the same coordinate system as dstBounds) onto which

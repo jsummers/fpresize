@@ -84,7 +84,7 @@ func (fp *FPObject) makeOutputLUT_Xto32(tableSize int) []float32 {
 
 // Take a row fresh from resizeWidth/resizeHeight
 //  * associated alpha, linear colorspace, some samples may not be valid
-// Convert to 
+// Convert to
 //  * unassociated alpha, linear colorspace, samples always valid,
 //    all samples clamped to [0,1].
 //
