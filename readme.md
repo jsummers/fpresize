@@ -52,16 +52,6 @@ workload, and the quality of Go's scheduler (which is expected to
 improve).
 
 
-Known bugs
-----------
-
-As of at least version 1.0.3 (2012/09/21), Go's standard PNG library has
-a bug that prevents it from correctly handling paletted PNG images with
-partial transparency. The bug has been fixed
-(<http://code.google.com/p/go/source/detail?r=f1acac08c808>; 2012/07/31),
-but I do not know when the fix will appear in a Go release.
-
-
 Other information
 -----------------
 
